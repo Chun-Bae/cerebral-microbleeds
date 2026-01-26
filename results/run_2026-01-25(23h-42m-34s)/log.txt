@@ -1,0 +1,1156 @@
+[2026-01-25 23:42:34] Results directory created at: results\run_2026-01-25(23h-42m-34s)
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.26818008e-01  4.29028763e-02 -1.15623924e-01  9.77674484e+01]
+ [-3.76525481e-02 -4.20594185e-01 -3.69858186e-01  1.07329803e+02]
+ [-3.22493650e-02 -7.67542993e-02  1.96209990e+00 -4.85116920e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : 0.033412255
+quatern_c       : 0.09142563
+quatern_d       : -0.99413395
+qoffset_x       : 97.76745
+qoffset_y       : 107.3298
+qoffset_z       : -48.511692
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29233162e-01  4.95086297e-03  8.90137076e-02  1.05558037e+02]
+ [-2.97069064e-03 -4.27420990e-01  2.04684661e-01  7.90420761e+01]
+ [ 1.95298464e-02  4.37965061e-02  1.98750616e+00 -9.52545624e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : -0.022524979
+quatern_c       : -0.051147673
+quatern_d       : -0.9984264
+qoffset_x       : 105.55804
+qoffset_y       : 79.042076
+qoffset_z       : -95.25456
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29461206e-01  2.09307914e-03  6.41651397e-02  1.05419777e+02]
+ [-3.65534182e-03 -4.26861448e-01 -2.28371280e-01  9.91047668e+01]
+ [ 1.34558127e-02 -4.91555754e-02  1.98588252e+00 -6.11127243e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : -0.015877612
+quatern_c       : 0.057247452
+quatern_d       : -0.99822813
+qoffset_x       : 105.41978
+qoffset_y       : 99.10477
+qoffset_z       : -61.112724
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.23342803e-01  6.74295576e-02 -1.36931724e-01  8.78711472e+01]
+ [-7.09635380e-02 -4.19598340e-01  2.76652224e-01  9.47747650e+01]
+ [-1.94008935e-02  6.34179439e-02  1.97603473e+00 -1.06019356e+02]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : 0.028584294
+quatern_c       : -0.0719323
+quatern_d       : -0.9937016
+qoffset_x       : 87.87115
+qoffset_y       : 94.774765
+qoffset_z       : -106.019356
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29477823e-01 -6.47156807e-04  6.24001209e-02  1.10847931e+02]
+ [-6.47156807e-04 -4.27690083e-01 -1.92594795e-01  9.38834229e+01]
+ [ 1.34062760e-02 -4.13777880e-02  1.98972698e+00 -4.90094795e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : -0.015620101
+quatern_c       : 0.048210647
+quatern_d       : -0.99871504
+qoffset_x       : 110.84793
+qoffset_y       : 93.88342
+qoffset_z       : -49.00948
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.28743711e-01  2.54722922e-02  5.91218741e-02  9.90796585e+01]
+ [-2.67736562e-02 -4.25992862e-01 -2.30134251e-01  1.04439308e+02]
+ [ 9.66172473e-03 -5.01257607e-02  1.98583555e+00 -6.64454880e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : -0.013040775
+quatern_c       : 0.05806075
+quatern_d       : -0.99776286
+qoffset_x       : 99.07966
+qoffset_y       : 104.43931
+qoffset_z       : -66.44549
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29059327e-01  2.26362310e-02 -2.42002755e-02  1.01635254e+02]
+ [ 2.30545849e-02  4.26743686e-01 -2.07618520e-01 -1.35224136e+02]
+ [-2.81380746e-03  4.48192954e-02  1.98904729e+00 -9.93555298e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : 0.026629688
+quatern_c       : 0.99827486
+quatern_d       : 0.05211891
+qoffset_x       : 101.635254
+qoffset_y       : -135.22414
+qoffset_z       : -99.35553
+srow_x          : [-4.29059327e-01  2.26362310e-02 -2.42002755e-02  1.01635254e+02]
+srow_y          : [ 2.3054585e-02  4.2674369e-01 -2.0761852e-01 -1.3522414e+02]
+srow_z          : [-2.8138075e-03  4.4819295e-02  1.9890473e+00 -9.9355530e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29162323e-01 -1.46867093e-02 -7.14050308e-02  1.12261391e+02]
+ [-1.41004808e-02  4.29143518e-01 -7.62495548e-02 -1.20628586e+02]
+ [-1.58814304e-02  1.58582963e-02  1.99726999e+00 -5.12540665e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : -0.016756983
+quatern_c       : 0.9995182
+quatern_d       : 0.01876688
+qoffset_x       : 112.26139
+qoffset_y       : -120.628586
+qoffset_z       : -51.254066
+srow_x          : [-4.2916232e-01 -1.4686709e-02 -7.1405031e-02  1.1226139e+02]
+srow_y          : [-1.41004808e-02  4.29143518e-01 -7.62495548e-02 -1.20628586e+02]
+srow_z          : [-1.5881430e-02  1.5858296e-02  1.9972700e+00 -5.1254066e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.26026691e-01  3.69724647e-02 -1.95581946e-01  9.83331451e+01]
+ [-3.50540508e-02 -4.27742041e-01 -9.75577538e-02  1.00141411e+02]
+ [-4.36327856e-02 -1.73531338e-02  1.98802168e+00 -5.58848991e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : 0.0499531
+quatern_c       : 0.022344321
+quatern_d       : -0.9976176
+qoffset_x       : 98.333145
+qoffset_y       : 100.14141
+qoffset_z       : -55.8849
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.27683397e-01  3.86215921e-02 -7.00709433e-02  9.91698990e+01]
+ [-3.84433843e-02 -4.27926532e-01 -2.64682249e-02  9.49638443e+01]
+ [-1.55037304e-02 -4.31312806e-03  1.99859688e+00 -5.16883087e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : 0.01780029
+quatern_c       : 0.0058248793
+quatern_d       : -0.9988163
+qoffset_x       : 99.1699
+qoffset_y       : 94.963844
+qoffset_z       : -51.68831
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29659483e-01 -1.87330276e-03 -2.11087432e-02  1.08946762e+02]
+ [ 3.35877615e-03 -4.01798117e-01 -7.08628208e-01  9.36593399e+01]
+ [-3.57698905e-03 -1.52269865e-01  1.87013381e+00 -1.75396023e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : -0.0047983085
+quatern_c       : -0.18012086
+quatern_d       : 0.9836279
+qoffset_x       : 108.94676
+qoffset_y       : 93.65934
+qoffset_z       : -17.539602
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.27118868e-01 -2.60488857e-02 -1.81603178e-01  1.22203758e+02]
+ [-1.97658669e-02  4.24016953e-01 -3.10506642e-01 -1.17967461e+02]
+ [-4.25455905e-02  6.45168498e-02  1.96738553e+00 -9.87686691e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : -0.026774874
+quatern_c       : 0.99555486
+quatern_d       : 0.07669131
+qoffset_x       : 122.20376
+qoffset_y       : -117.96746
+qoffset_z       : -98.76867
+srow_x          : [-4.2711887e-01 -2.6048886e-02 -1.8160318e-01  1.2220376e+02]
+srow_y          : [-1.9765867e-02  4.2401695e-01 -3.1050664e-01 -1.1796746e+02]
+srow_z          : [-4.2545591e-02  6.4516850e-02  1.9673855e+00 -9.8768669e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.27772731e-01  3.29904221e-02 -1.09501503e-01  1.04631027e+02]
+ [ 3.57943960e-02  4.24588442e-01 -2.58097470e-01 -1.29219971e+02]
+ [-1.89891625e-02  5.71632981e-02  1.98025131e+00 -7.84662018e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : 0.040151957
+quatern_c       : 0.99671996
+quatern_d       : 0.06573645
+qoffset_x       : 104.63103
+qoffset_y       : -129.21997
+qoffset_z       : -78.4662
+srow_x          : [-4.2777273e-01  3.2990422e-02 -1.0950150e-01  1.0463103e+02]
+srow_y          : [ 3.5794396e-02  4.2458844e-01 -2.5809747e-01 -1.2921997e+02]
+srow_z          : [-1.8989163e-02  5.7163298e-02  1.9802513e+00 -7.8466202e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:34] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.26758884e-01 -4.84602945e-02 -5.88395244e-02  1.26836090e+02]
+ [ 5.00810220e-02 -4.12268794e-01 -5.13218888e-01  8.88533554e+01]
+ [ 3.06519325e-04 -1.10983732e-01  1.93213464e+00 -4.62072182e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : -0.0072506526
+quatern_c       : -0.13005294
+quatern_d       : 0.98978704
+qoffset_x       : 126.83609
+qoffset_y       : 88.853355
+qoffset_z       : -46.20722
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.28835988e-01 -1.54998656e-02 -1.03116125e-01  1.13624260e+02]
+ [-1.86541211e-02  4.24467653e-01  2.98420340e-01 -1.35488358e+02]
+ [-1.95719916e-02 -6.49484619e-02  1.97492087e+00 -1.80701694e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : -0.019937988
+quatern_c       : 0.99666077
+quatern_d       : -0.07534233
+qoffset_x       : 113.62426
+qoffset_y       : -135.48836
+qoffset_z       : -18.07017
+srow_x          : [-4.28835988e-01 -1.54998656e-02 -1.03116125e-01  1.13624260e+02]
+srow_y          : [-1.8654121e-02  4.2446765e-01  2.9842034e-01 -1.3548836e+02]
+srow_z          : [ -0.01957199  -0.06494846   1.9749209  -18.07017   ]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29465204e-01 -1.04959039e-02  4.18445840e-02  1.07111206e+02]
+ [-1.16947806e-02  4.24950600e-01 -2.91107357e-01 -1.19665520e+02]
+ [ 7.36322254e-03  6.27549216e-02  1.97825825e+00 -9.81318741e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : 0.012947267
+quatern_c       : -0.9971945
+quatern_d       : -0.07310547
+qoffset_x       : 107.111206
+qoffset_y       : -119.66552
+qoffset_z       : -98.131874
+srow_x          : [-4.29465204e-01 -1.04959039e-02  4.18445840e-02  1.07111206e+02]
+srow_y          : [-1.1694781e-02  4.2495060e-01 -2.9110736e-01 -1.1966552e+02]
+srow_z          : [ 7.3632225e-03  6.2754922e-02  1.9782583e+00 -9.8131874e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.28973258e-01 -1.62545536e-02  8.69647041e-02  1.10805939e+02]
+ [-1.98037345e-02  4.19803709e-01 -4.16419655e-01 -1.06825089e+02]
+ [ 1.48696946e-02  9.01775584e-02  1.95423436e+00 -1.02492470e+02]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : 0.02110518
+quatern_c       : -0.9940388
+quatern_d       : -0.1051462
+qoffset_x       : 110.80594
+qoffset_y       : -106.82509
+qoffset_z       : -102.49247
+srow_x          : [-4.2897326e-01 -1.6254554e-02  8.6964704e-02  1.1080594e+02]
+srow_y          : [-1.9803734e-02  4.1980371e-01 -4.1641966e-01 -1.0682509e+02]
+srow_z          : [ 1.4869695e-02  9.0177558e-02  1.9542344e+00 -1.0249247e+02]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.28040972e-01 -7.32529217e-03  1.71563648e-01  1.05746422e+02]
+ [ 2.18395288e-03 -4.25581909e-01 -2.75626797e-01  9.30419464e+01]
+ [ 3.75167159e-02 -5.88024376e-02  1.97347303e+00 -7.11940384e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'r')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [1.        0.4296875 0.4296875 2.        0.        0.        0.
+ 0.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : scanner
+sform_code      : unknown
+quatern_b       : 0.043418244
+quatern_c       : -0.06889557
+quatern_d       : 0.99666315
+qoffset_x       : 105.74642
+qoffset_y       : 93.04195
+qoffset_z       : -71.19404
+srow_x          : [0. 0. 0. 0.]
+srow_y          : [0. 0. 0. 0.]
+srow_z          : [0. 0. 0. 0.]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.28942233e-01  2.06786096e-02  6.78210855e-02  1.07314217e+02]
+ [ 2.05838121e-02  4.29182768e-01 -1.45782875e-02 -1.35206223e+02]
+ [ 1.47045506e-02  2.42861314e-03  1.99879658e+00 -7.05186234e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : -0.02401777
+quatern_c       : -0.9995611
+quatern_d       : -0.003236718
+qoffset_x       : 107.31422
+qoffset_y       : -135.20622
+qoffset_z       : -70.51862
+srow_x          : [-4.2894223e-01  2.0678610e-02  6.7821085e-02  1.0731422e+02]
+srow_y          : [ 2.05838121e-02  4.29182768e-01 -1.45782875e-02 -1.35206223e+02]
+srow_z          : [ 1.4704551e-02  2.4286131e-03  1.9987966e+00 -7.0518623e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29081649e-01 -2.23370306e-02  2.15061512e-02  1.11311806e+02]
+ [-2.26674601e-02  4.27274376e-01 -1.83493987e-01 -1.14937691e+02]
+ [ 2.54515838e-03  3.96106951e-02  1.99144852e+00 -7.10422134e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : 0.0262215
+quatern_c       : -0.9985863
+quatern_d       : -0.04604807
+qoffset_x       : 111.311806
+qoffset_y       : -114.93769
+qoffset_z       : -71.04221
+srow_x          : [-4.29081649e-01 -2.23370306e-02  2.15061512e-02  1.11311806e+02]
+srow_y          : [-2.2667460e-02  4.2727438e-01 -1.8349399e-01 -1.1493769e+02]
+srow_z          : [ 2.5451584e-03  3.9610695e-02  1.9914485e+00 -7.1042213e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
+[2026-01-25 23:42:35] 
+<class 'nibabel.nifti1.Nifti1Image'>
+data shape (512, 512, 72)
+affine:
+[[-4.29505557e-01 -6.44729100e-03  4.98595536e-02  1.10147987e+02]
+ [-8.71745870e-03  4.18330342e-01 -4.54981923e-01 -1.12205605e+02]
+ [ 8.96218233e-03  9.79259536e-02  1.94692206e+00 -9.65969238e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+metadata:
+<class 'nibabel.nifti1.Nifti1Header'> object, endian='<'
+sizeof_hdr      : 348
+data_type       : np.bytes_(b'')
+db_name         : np.bytes_(b'')
+extents         : 0
+session_error   : 0
+regular         : np.bytes_(b'')
+dim_info        : 0
+dim             : [  3 512 512  72   1   1   1   1]
+intent_p1       : 0.0
+intent_p2       : 0.0
+intent_p3       : 0.0
+intent_code     : none
+datatype        : uint16
+bitpix          : 16
+slice_start     : 0
+pixdim          : [-1.         0.4296875  0.4296875  2.         1.         1.
+  1.         1.       ]
+vox_offset      : 0.0
+scl_slope       : nan
+scl_inter       : nan
+slice_end       : 0
+slice_code      : unknown
+xyzt_units      : 2
+cal_max         : 0.0
+cal_min         : 0.0
+slice_duration  : 0.0
+toffset         : 0.0
+glmax           : 0
+glmin           : 0
+descrip         : np.bytes_(b'')
+aux_file        : np.bytes_(b'')
+qform_code      : unknown
+sform_code      : aligned
+quatern_b       : 0.00888261
+quatern_c       : -0.99330336
+quatern_d       : -0.11461537
+qoffset_x       : 110.14799
+qoffset_y       : -112.205605
+qoffset_z       : -96.596924
+srow_x          : [-4.2950556e-01 -6.4472910e-03  4.9859554e-02  1.1014799e+02]
+srow_y          : [-8.71745870e-03  4.18330342e-01 -4.54981923e-01 -1.12205605e+02]
+srow_z          : [ 8.9621823e-03  9.7925954e-02  1.9469221e+00 -9.6596924e+01]
+intent_name     : np.bytes_(b'')
+magic           : np.bytes_(b'n+1')
+
