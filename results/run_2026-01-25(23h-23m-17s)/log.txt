@@ -1,1 +1,0 @@
-[2026-01-25 23:23:17] Results directory created at: results\run_2026-01-25(23h-23m-17s)
