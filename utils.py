@@ -165,13 +165,16 @@ def decode(loc, anchors, variances=[0.1, 0.2]):
     # 1. 중심점 복원 (cx, cy)
     # 앵커 중심 + (예측치 * 0.1 * 앵커 너비)
     # "기준점(앵커)에서 모델이 가라고 한 만큼 이동시킨다"
-    res_cxcy = anchors[:, :2] + loc[:, :2] * variances[0] * anchors[:, 2:]
+    offset_limit = 2.0 # 앵커 중심에서 앵커 크기의 2배 이상은 못 가게 제한
+    cxcy_offset = torch.clamp(loc[:, :2], min=-offset_limit, max=offset_limit)
+    res_cxcy = anchors[:, :2] + cxcy_offset * variances[0] * anchors[:, 2:]
 
-    # 2. 너비/높이 복원 (w, h)
-    # 앵커 크기 * exp(예측치 * 0.2)
-    # log의 반대인 지수함수(exp)를 써서 크기를 다시 곱셈으로 바꿈
-    # "기준 크기(앵커)를 모델이 키우라는 배수만큼 키운다"
-    res_wh = anchors[:, 2:] * torch.exp(loc[:, 2:] * variances[1])
+    # 2. 크기 변화량 제한 (가장 중요!)
+    # exp(5)는 약 148배, exp(2)는 약 7.3배
+    # CMB는 작으므로 크기가 앵커보다 3~5배 이상 커질 일이 거의 없음
+    size_limit = 2.0 # exp(2.0 * 0.2) = 1.49배 정도로 제한 (필요에 따라 조절)
+    wh_offset = torch.clamp(loc[:, 2:], min=-size_limit, max=size_limit)
+    res_wh = anchors[:, 2:] * torch.exp(wh_offset * variances[1])
 
     # 3. 하나로 합쳐서 최종 박스 리턴
     # return: (N, 4) 이미지 상의 실제 [cx, cy, w, h]

@@ -128,10 +128,6 @@ class CMBsDatasetLMDB(Dataset):
         )  # (1, H, W)
         swi_tensor = swi_tensor.repeat(3, 1, 1)  # (3, H, W) - 3채널 복사
 
-        # ROI 마스크: 이진화 후 Tensor
-        roi_mask = (roi_mask > 0).astype(np.float32)
-        roi_tensor = torch.from_numpy(roi_mask).unsqueeze(0)  # (1, H, W)
-
         # bbox 로드
         filename = self.idx_to_name.get(idx, "")
         bboxes_list = self.bboxes_dict.get(filename, [])
@@ -141,16 +137,67 @@ class CMBsDatasetLMDB(Dataset):
         else:
             bboxes = torch.zeros((0, 4), dtype=torch.float32)
 
-        return swi_tensor, roi_tensor, bboxes
+        fe_gt_mask = generate_fe_mask(swi_tensor[0:1], bboxes_list, beta=1.5)
+
+        return swi_tensor, fe_gt_mask, bboxes
 
     def __del__(self):
         if self.env is not None:
             self.env.close()
 
 
+def generate_fe_mask(image_tensor, bboxes, beta=1.5):
+    """
+    논문 수식: M = 1 - (P / B_mean)
+    image_tensor: (1, H, W) - 정규화 전 16-bit 이미지 (0~65535)
+    bboxes: (N, 4) [cx, cy, w, h] (0~1 scale)
+    """
+    # 1. 함수 내부에서 즉시 정규화 (0~1 scale)
+    # 논문 수식의 1.0과 체급을 맞추기 위해 필수입니다.
+    P = image_tensor.to(torch.float32) / 65535.0
+
+    _, H, W = P.shape
+    fe_mask = torch.zeros((1, H, W), dtype=torch.float32, device=P.device)
+
+    for box in bboxes:
+        cx, cy, w, h = box
+        # 좌표 변환
+        x1, y1 = int((cx - w / 2) * W), int((cy - h / 2) * H)
+        x2, y2 = int((cx + w / 2) * W), int((cy + h / 2) * H)
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(W, x2), min(H, y2)
+
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        # 2. 정규화된 ROI 영역 추출
+        roi = P[:, y1:y2, x1:x2]
+
+        # 3. B_mean 계산 (논문: beta * mean(B_area))
+        b_mean = beta * torch.mean(roi)
+
+        if b_mean > 0:
+            # 4. 논문 수식 적용: M = 1 - (P / B_mean)
+            # 병변(어두운 곳)은 P가 작으므로 M이 커짐 -> 특징 강화
+            enhanced = 1.0 - (roi / b_mean)
+
+            # 5. beta 임계값 처리 (B_mean보다 밝은 픽셀은 강화 제외)
+            enhanced[roi > b_mean] = 0
+
+            # 5-1. 픽셀 값이 너무 낮으면(완전 검은색) 병변이 아니라 배경으로 간주하여 0 처리
+            # 이걸 안하면 배경 예측이 많아짐
+            # 수정: 이미지가 0~1로 정규화되어 있으므로, 아주 작은 값과 비교해야 함
+            min_pixel_val = 1e-6
+            enhanced[roi < min_pixel_val] = 0
+
+            # 6. 마스크에 결과 반영
+            fe_mask[:, y1:y2, x1:x2] = torch.clamp(enhanced, min=0.0)
+
+    return fe_mask
+
+
 def collate_fn(batch):
     images = torch.stack([item[0] for item in batch], dim=0)  # (B, C, H, W)
-    masks = torch.stack([item[1] for item in batch], dim=0)  # (B, 1, H ,W)
+    fe_masks = torch.stack([item[1] for item in batch], dim=0)  # (B, 1, H ,W)
     bboxes = [item[2] for item in batch]  # 리스트 (가변 길이)
 
     # images:  (4, 3, 512, 512)  # ← Tensor (고정 크기, stack 가능)
@@ -165,7 +212,7 @@ def collate_fn(batch):
     #        [0.8, 0.1, 0.06, 0.06]])
     # ]
 
-    return images, masks, bboxes
+    return images, fe_masks, bboxes
 
 
 if __name__ == "__main__":

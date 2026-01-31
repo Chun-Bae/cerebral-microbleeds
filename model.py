@@ -105,7 +105,7 @@ class SSD_FE(nn.Module):
     def __init__(self, num_classes):
         super(SSD_FE, self).__init__()
 
-        self.anchor_scales = [[0.0048], [0.0112], [0.0176]]
+        self.anchor_scales = [[0.0048], [0.0112], [0.1176]]
         self.anchor_ratios = [0.8750, 1.0000, 1.1250]
 
         # 1. VGG16 백본
@@ -122,9 +122,17 @@ class SSD_FE(nn.Module):
         # stage1 - conv3_3(256)
         # stage2 - conv4_3(512)
         # stage3 - conv5_3(512)
+
         self.head1 = SSDHead(256, self.num_anchors, num_classes)
         self.head2 = SSDHead(512, self.num_anchors, num_classes)
         self.head3 = SSDHead(512, self.num_anchors, num_classes)
+
+        # Xavier 초기화
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward(self, x, gt_mask=None):
         # 1. 백본

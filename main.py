@@ -19,7 +19,7 @@ os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 BATCH_SIZE = 32
 NUM_EPOCHS = 200
 NUM_WORKERS = 8
-LEARNING_RATE = 1e-8
+LEARNING_RATE = 1e-5
 SPLIT_RATIO = 0.2
 K = 5
 SEED = 42
@@ -107,7 +107,66 @@ def get_fold_loaders(fold_idx):
     return train_loader, val_loader
 
 
-def train_fold(fold_idx, result_dir):
+def select_pretrained_weights():
+    """
+    weights 폴더의 가중치 파일 목록을 보여주고 선택하게 함
+    Returns: 선택된 가중치 파일 경로 또는 None (새로 학습)
+    """
+    weights_dir = "weights"
+
+    # weights 폴더가 없거나 비어있으면 스킵
+    if not os.path.exists(weights_dir):
+        print("📂 weights 폴더가 없습니다. 새로 학습을 시작합니다.")
+        return None
+
+    # .pth 파일 목록 가져오기
+    weight_files = sorted([f for f in os.listdir(weights_dir) if f.endswith(".pth")])
+
+    if not weight_files:
+        print("📂 저장된 가중치가 없습니다. 새로 학습을 시작합니다.")
+        return None
+
+    # 파일 목록 출력
+    print("\n" + "=" * 50)
+    print("  📦 저장된 가중치 목록")
+    print("=" * 50)
+    print(f"  [0] 🆕 새로 학습 시작 (가중치 로드 안 함)")
+
+    for idx, filename in enumerate(weight_files, start=1):
+        filepath = os.path.join(weights_dir, filename)
+        file_size = os.path.getsize(filepath) / (1024 * 1024)  # MB
+        file_time = datetime.datetime.fromtimestamp(
+            os.path.getmtime(filepath)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"  [{idx}] {filename} ({file_size:.1f}MB, {file_time})")
+
+    print("=" * 50)
+
+    # 사용자 입력
+    while True:
+        try:
+            choice = input(
+                "👉 로드할 가중치 번호를 선택하세요 (0~{}): ".format(len(weight_files))
+            )
+            choice = int(choice.strip())
+
+            if choice == 0:
+                print("🆕 새로 학습을 시작합니다.")
+                return None
+            elif 1 <= choice <= len(weight_files):
+                selected_file = os.path.join(weights_dir, weight_files[choice - 1])
+                print(f"✅ 선택된 가중치: {selected_file}")
+                return selected_file
+            else:
+                print(f"⚠️ 0~{len(weight_files)} 사이의 숫자를 입력하세요.")
+        except ValueError:
+            print("⚠️ 숫자를 입력하세요.")
+        except KeyboardInterrupt:
+            print("\n🆕 새로 학습을 시작합니다.")
+            return None
+
+
+def train_fold(fold_idx, result_dir, pretrained_weights=None):
     """단일 Fold 학습"""
     print(f"\n{'=' * 50}")
     print(f"  FOLD {fold_idx + 1} / {K}")
@@ -124,10 +183,46 @@ def train_fold(fold_idx, result_dir):
     model = SSD_FE(num_classes=2).to(DEVICE)
 
     # 4. 손실 함수 & 옵티마이저
-    criterion = MultiBoxLoss(num_classes=2, iou_threshold=0.35, neg_pos_ratio=3)
+    criterion = MultiBoxLoss(
+        num_classes=2, iou_threshold=0.35, alpha=0.15, alpha_loc=20.0, gamma=2.0
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # 5. 학습 실행
+    # 5. 시작
+    start_epoch = 1
+    loss_history = None
+
+    # 5-1. 사전 학습 가중치 로드 (checkpoint 형태)
+    if pretrained_weights and os.path.exists(pretrained_weights):
+        print(f"  📥 가중치 로드 중: {pretrained_weights}")
+        checkpoint = torch.load(pretrained_weights, map_location=DEVICE)
+
+        # checkpoint 형태인지 확인 (epoch 키가 있으면 새로운 형식)
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+
+            # optimizer 상태 복원
+            if "optimizer_state_dict" in checkpoint:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+            # epoch 복원 (다음 epoch부터 시작)
+            if "epoch" in checkpoint:
+                start_epoch = checkpoint["epoch"] + 1
+                print(f"  📍 저장된 epoch: {checkpoint['epoch']}")
+
+            if "val_loss" in checkpoint:
+                print(f"  📊 저장된 Val Loss: {checkpoint['val_loss']:.4f}")
+
+            if "loss_history" in checkpoint:
+                loss_history = checkpoint["loss_history"]
+                print(f"  📈 저장된 히스토리: {len(loss_history['train_loss'])} epochs")
+        else:
+            # 예전 형식 (state_dict만 저장된 경우)
+            model.load_state_dict(checkpoint)
+
+        print(f"  ✅ 가중치 로드 완료! (epoch {start_epoch}부터 시작)")
+
+    # 6. 학습 실행
     train(
         model=model,
         train_loader=train_loader,
@@ -137,6 +232,8 @@ def train_fold(fold_idx, result_dir):
         device=DEVICE,
         num_epochs=NUM_EPOCHS,
         fold_idx=fold_idx,
+        start_epoch=start_epoch,
+        loss_history=loss_history,
     )
 
     return fold_result_dir
@@ -184,7 +281,9 @@ def evaluate_holdout(fold_results, result_dir):
     # 2. 각 Fold 모델 로드 및 평가
     from train import validate
 
-    criterion = MultiBoxLoss(num_classes=2, iou_threshold=0.35, neg_pos_ratio=3)
+    criterion = MultiBoxLoss(
+        num_classes=2, iou_threshold=0.35, alpha=0.20, alpha_loc=20.0, gamma=2.0
+    )
 
     fold_losses = []
 
@@ -244,12 +343,16 @@ def main():
     print("\n[Step 1] 데이터 준비...")
     prepare_data()
 
+    # 2.5 가중치 선택 (이어서 학습할지 결정)
+    print("\n[Step 1.5] 사전 학습 가중치 선택...")
+    pretrained_weights = select_pretrained_weights()
+
     # 3. K-Fold 학습
     print("\n[Step 2] K-Fold 학습 시작...")
     fold_results = []
 
     for fold_idx in range(K):
-        fold_dir = train_fold(fold_idx, result_dir)
+        fold_dir = train_fold(fold_idx, result_dir, pretrained_weights)
         fold_results.append(fold_dir)
 
     # 4. 학습 완료 요약

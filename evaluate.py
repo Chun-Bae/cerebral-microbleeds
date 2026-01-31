@@ -1,4 +1,5 @@
 import torch
+
 torch.backends.cudnn.benchmark = True
 import torch.nn.functional as F
 from torchvision.ops import nms
@@ -20,8 +21,8 @@ import matplotlib.font_manager as fm
 
 available_fonts = [f.name for f in fm.fontManager.ttflist]
 if "NanumGothic" in available_fonts:
-plt.rcParams["font.family"] = "NanumGothic"
-plt.rcParams["axes.unicode_minus"] = False
+    plt.rcParams["font.family"] = "NanumGothic"
+    plt.rcParams["axes.unicode_minus"] = False
 
 
 def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.3):
@@ -42,6 +43,12 @@ def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.
     # 1. Softmax → 병변 클래스 확률만 추출
     probs = F.softmax(pred_scores, dim=-1)
     scores = probs[:, 1]
+    # print(f"Max score: {scores.max()}, Min score: {scores.min()}, Mean score: {scores.mean()}")
+    # top_k_val = 20
+    # if len(scores) > top_k_val:
+    #     scores, idx = scores.topk(top_k_val)
+    #     pred_locs = pred_locs[idx]
+    #     anchors = anchors[idx]
 
     # 2. Confidence 필터링
     mask = scores > conf_thresh
@@ -67,6 +74,7 @@ def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.
     boxes_xyxy[:, 2] = boxes[:, 0] + boxes[:, 2] / 2  # x2
     boxes_xyxy[:, 3] = boxes[:, 1] + boxes[:, 3] / 2  # y2
 
+    # print(f"Before NMS: {len(boxes_xyxy)}")
     # 5. NMS (Non-Maximum Suppression)
     keep = nms(boxes_xyxy, filtered_scores, nms_thresh)
 
@@ -471,21 +479,25 @@ def evaluate(
     """
     전체 평가: TP/FP/FN, mAP, FROC, Confusion Matrix, 시각화
     """
+    import gc
+
     os.makedirs(save_dir, exist_ok=True)
+    vis_dir = os.path.join(save_dir, "visualizations")
+    os.makedirs(vis_dir, exist_ok=True)
 
     total_tp, total_fp, total_fn = 0, 0, 0
 
     # mAP, FROC용 데이터 수집
     all_preds = []  # [(boxes, scores, img_id), ...]
     all_gts = {}  # {img_id: gt_boxes}
-    all_images = {}  # 시각화용
-    all_names = {}  # {img_id: filename}
 
     model.eval()
     img_id = 0
+    vis_count = 0
 
     with torch.no_grad():
-        for batch_img, batch_mask, batch_bboxes in tqdm(testloader, desc="평가 중"):
+        pbar = tqdm(testloader, desc="평가+시각화")
+        for batch_img, batch_mask, batch_bboxes in pbar:
             batch_img = batch_img.to(device)
 
             # 1. 추론
@@ -508,22 +520,58 @@ def evaluate(
                 total_fp += fp
                 total_fn += fn
 
-                # mAP, FROC용
-                all_preds.append((pred_boxes, pred_score, img_id))
-                all_gts[img_id] = gt_boxes
+                # mAP, FROC용 (CPU로 이동하여 저장)
+                all_preds.append((pred_boxes.cpu(), pred_score.cpu(), img_id))
+                all_gts[img_id] = gt_boxes.cpu()
 
-                # 시각화용 (전체 저장)
-                all_images[img_id] = batch_img[b].cpu().numpy()
+                # 시각화 저장 (MRI: 16-bit grayscale → 8-bit)
+                img_np = batch_img[b].cpu().numpy()
+                if len(img_np.shape) == 3:
+                    img_np = img_np.transpose(1, 2, 0)  # (C, H, W) → (H, W, C)
+                    # 3채널 grayscale이면 1채널만 사용
+                    if img_np.shape[2] == 3:
+                        img_np = img_np[:, :, 0]  # 첫 번째 채널만 사용
+                    # 16-bit (0~65535) → 8-bit (0~255)
+                    img_np = (img_np / 256).clip(0, 255).astype(np.uint8)
 
-                # 파일명 저장
-                if hasattr(dataset, "idx_to_name"):
-                    global_idx = (
-                        img_id // testloader.batch_size
-                    ) * testloader.batch_size + b
-                    if global_idx in dataset.idx_to_name:
-                        all_names[img_id] = dataset.idx_to_name[global_idx]
+                gt_np = gt_boxes.cpu().numpy()
+                pred_np = (
+                    pred_boxes.cpu().numpy() if len(pred_boxes) > 0 else np.array([])
+                )
+                pred_s_np = (
+                    pred_score.cpu().numpy() if len(pred_score) > 0 else np.array([])
+                )
+
+                # 파일명 결정
+                if hasattr(dataset, "idx_to_name") and img_id in dataset.idx_to_name:
+                    filename = dataset.idx_to_name[img_id]
+                else:
+                    filename = f"img_{img_id:05d}.png"
+
+                save_path = os.path.join(vis_dir, filename)
+                visualize_predictions(img_np, gt_np, pred_np, pred_s_np, save_path)
+                vis_count += 1
 
                 img_id += 1
+
+            # tqdm 업데이트
+            pbar.set_postfix(
+                {
+                    "TP": total_tp,
+                    "FP": total_fp,
+                    "FN": total_fn,
+                    "pred_boxes": len(pred_boxes),
+                    "vis": vis_count,
+                }
+            )
+
+            # GPU 메모리 정리
+            del pred_locs, pred_scores, batch_img
+            torch.cuda.empty_cache()
+
+    # 메모리 정리
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # 4. 지표 계산
     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
@@ -549,27 +597,7 @@ def evaluate(
         total_tp, total_fp, total_fn, os.path.join(save_dir, "confusion_matrix.png")
     )
 
-    # 8. 시각화 (일부)
-    vis_dir = os.path.join(save_dir, "visualizations")
-    os.makedirs(vis_dir, exist_ok=True)
-
-    for i, (boxes, scores, idx) in enumerate(tqdm(all_preds, desc="시각화 저장")):
-        if idx in all_images:
-            img = all_images[idx]
-            if len(img.shape) == 3:
-                img = img.transpose(1, 2, 0)  # (C, H, W) → (H, W, C)
-                # 원본 16-bit (0~65535) → 8-bit (0~255) → 색 반전
-                img = (img / 256).clip(0, 255).astype(np.uint8)
-            gt = all_gts[idx].cpu().numpy()
-            pred = boxes.cpu().numpy() if len(boxes) > 0 else np.array([])
-            pred_s = scores.cpu().numpy() if len(scores) > 0 else np.array([])
-
-            # 파일명으로 저장 (VK001_slice_5.png)
-            save_path = os.path.join(vis_dir, all_names[idx])
-
-            visualize_predictions(img, gt, pred, pred_s, save_path)
-
-    # 9. 결과 저장
+    # 8. 결과 저장
     results = {
         "TP": total_tp,
         "FP": total_fp,
@@ -590,21 +618,50 @@ def evaluate(
         else:
             print(f"  {k}: {v}")
     print("=" * 50)
+    print(f"  📁 시각화 저장: {vis_count}개 → {vis_dir}")
+    print("=" * 50)
 
     # 결과 파일로 저장
     with open(os.path.join(save_dir, "metrics.txt"), "w") as f:
         for k, v in results.items():
             f.write(f"{k}: {v}\n")
 
+    # 최종 메모리 정리
+    del all_preds, all_gts
+    gc.collect()
+
     return results
 
 
 if __name__ == "__main__":
     import datetime
+    import argparse
+    from torch.utils.data import Subset
+
+    parser = argparse.ArgumentParser(description="CMB Detection Evaluation")
+    parser.add_argument(
+        "--patient",
+        type=str,
+        default=None,
+        help="Specific patient ID to evaluate (e.g., VK049)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="weights/latest_ssd_fold_0.pth",
+        help="Path to model weights",
+    )
+    parser.add_argument(
+        "--lmdb_path",
+        type=str,
+        default="data/lmdb/holdout_test.lmdb",
+        help="Path to LMDB dataset",
+    )
+    args = parser.parse_args()
 
     # ==================== 설정 ====================
-    MODEL_PATH = "weights/best_ssd_fold_0.pth"
-    LMDB_PATH = "data/lmdb/holdout_test.lmdb"
+    MODEL_PATH = args.model
+    LMDB_PATH = args.lmdb_path
     BATCH_SIZE = 32
     NUM_WORKERS = 8
     CONF_THRESH = 0.5
@@ -612,7 +669,10 @@ if __name__ == "__main__":
 
     # 타임스탬프 폴더 생성
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
-    SAVE_DIR = os.path.join("results", f"eval_{timestamp}")
+    if args.patient:
+        SAVE_DIR = os.path.join("results", f"eval_{args.patient}_{timestamp}")
+    else:
+        SAVE_DIR = os.path.join("results", f"eval_{timestamp}")
     os.makedirs(SAVE_DIR, exist_ok=True)
     # ===============================================
 
@@ -625,11 +685,43 @@ if __name__ == "__main__":
 
     # 모델 로드
     model = SSD_FE(num_classes=2).to(device)
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    checkpoint = torch.load(MODEL_PATH, map_location=device)
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        model.load_state_dict(checkpoint["model_state_dict"])
+    else:
+        model.load_state_dict(checkpoint)
     print(f"✅ 모델 로드: {MODEL_PATH}")
 
     # 데이터 로드
     dataset = CMBsDatasetLMDB(LMDB_PATH, BBOX_JSON_PATH)
+
+    # 환자 필터링
+    if args.patient:
+        print(f"🔍 환자 '{args.patient}' 검색 중...")
+        target_indices = []
+        new_idx_to_name = {}
+
+        # 필터링 및 이름 매핑 재구성
+        new_idx = 0
+        for i in range(len(dataset)):
+            name = dataset.idx_to_name.get(i, "")
+            if args.patient in name:
+                target_indices.append(i)
+                new_idx_to_name[new_idx] = name
+                new_idx += 1
+
+        if len(target_indices) == 0:
+            print(f"❌ Error: 환자 '{args.patient}' 데이터를 찾을 수 없습니다.")
+            sys.exit(1)
+
+        print(f"✅ 환자 '{args.patient}' 데이터 발견: {len(target_indices)}장")
+
+        # Subset 생성
+        original_dataset = dataset
+        dataset = Subset(original_dataset, target_indices)
+        # Subset에 idx_to_name 속성 추가 (evaluate 함수 호환성)
+        dataset.idx_to_name = new_idx_to_name
+
     testloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
