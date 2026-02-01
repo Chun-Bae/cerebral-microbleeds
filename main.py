@@ -16,11 +16,14 @@ from extract_bboxes import main as extract_bboxes_main
 # [설정] Albumentations 업데이트 경고 끄기 (Import 이전에 설정해야 함)
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 
-BATCH_SIZE = 32
-NUM_EPOCHS = 200
+BATCH_SIZE = 30
+NUM_EPOCHS = 1000
 NUM_WORKERS = 8
 LEARNING_RATE = 1e-5
 SPLIT_RATIO = 0.2
+IOU_THRESH = 0.35
+ALPHA = 0.75
+ALPHA_LOC = 5.0
 K = 5
 SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -184,7 +187,7 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None):
 
     # 4. 손실 함수 & 옵티마이저
     criterion = MultiBoxLoss(
-        num_classes=2, iou_threshold=0.35, alpha=0.15, alpha_loc=20.0, gamma=2.0
+        num_classes=2, iou_threshold=IOU_THRESH, alpha=ALPHA, alpha_loc=ALPHA_LOC, gamma=2.0
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
@@ -282,7 +285,7 @@ def evaluate_holdout(fold_results, result_dir):
     from train import validate
 
     criterion = MultiBoxLoss(
-        num_classes=2, iou_threshold=0.35, alpha=0.20, alpha_loc=20.0, gamma=2.0
+        num_classes=2, iou_threshold=IOU_THRESH, alpha=ALPHA, alpha_loc=ALPHA_LOC, gamma=2.0
     )
 
     fold_losses = []

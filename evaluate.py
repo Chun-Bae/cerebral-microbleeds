@@ -657,6 +657,12 @@ if __name__ == "__main__":
         default="data/lmdb/holdout_test.lmdb",
         help="Path to LMDB dataset",
     )
+    parser.add_argument(
+        "--conf_thresh",
+        type=float,
+        default=0.5,
+        help="Confidence threshold for detection (default: 0.5)",
+    )
     args = parser.parse_args()
 
     # ==================== 설정 ====================
@@ -664,7 +670,7 @@ if __name__ == "__main__":
     LMDB_PATH = args.lmdb_path
     BATCH_SIZE = 32
     NUM_WORKERS = 8
-    CONF_THRESH = 0.5
+    CONF_THRESH = args.conf_thresh
     IOU_THRESH = 0.3
 
     # 타임스탬프 폴더 생성

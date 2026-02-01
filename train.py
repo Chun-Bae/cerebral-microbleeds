@@ -205,18 +205,44 @@ class MultiBoxLoss(nn.Module):
             # 1. IoU 계산
             ious = jaccard(gt_boxes_b, anchors)
 
-            # Top-K 매칭 (단순화): 각 GT별로 IoU 상위 K개의 앵커 무조건 선택
-            # 작은 객체가 IoU가 낮아도 학습 기회를 갖도록 강제함
+            # --- ATSS (Adaptive Training Sample Selection) 적용 ---
+            # 목적: 1) IoU가 낮은 불량 앵커 제거 (확신도 상승)
+            #       2) 중복 앵커 발생 시 더 적합한 GT에게 할당 (정확도 상승)
             K = 9
-            _, topk_idx = ious.topk(K, dim=1)  # (num_gt, K)
+            topk_values, topk_idx = ious.topk(K, dim=1)  # (num_gt, K)
 
-            # 인덱스 정리
-            anchor_indices = topk_idx.view(-1)  # (num_gt * K)
-            gt_indices = torch.arange(len(gt_boxes_b)).to(device).repeat_interleave(K)
+            # 1. 동적 임계값 계산 (Mean + Std)
+            iou_mean = topk_values.mean(1, keepdim=True)
+            iou_std = topk_values.std(1, keepdim=True)
+            iou_thresh = iou_mean + iou_std
 
-            # 할당 (나중 GT가 덮어쓰는 방식)
-            conf_t[b, anchor_indices] = gt_labels_b[gt_indices]
-            target_boxes[b, anchor_indices] = gt_boxes_b[gt_indices]
+            # 2. 임계값 넘는 앵커만 "진짜 후보"로 인정
+            is_candidate = topk_values >= iou_thresh
+            is_candidate[:, 0] = True  # Top-1은 무조건 포함 (Recall 보장)
+
+            # 3. 전체 앵커 맵에 후보 마킹
+            # mask: (num_gt, num_anchors)
+            mask = torch.zeros_like(ious, dtype=torch.bool)
+            # topk_idx 위치에 is_candidate 값(T/F)을 뿌림
+            mask.scatter_(1, topk_idx, is_candidate)
+
+            # 4. 중복 할당 경쟁 (IoU 높은 GT가 승리)
+            # 후보가 아닌 곳의 IoU는 -1로 만들어 탈락시킴
+            candidate_ious = ious.clone()
+            candidate_ious[~mask] = -1.0
+
+            # 각 앵커별로 가장 높은 IoU를 가진 GT 선택 (Max over GTs)
+            # values: (num_anchors,), gt_indices_max: (num_anchors)
+            values, gt_indices_max = candidate_ious.max(dim=0)
+
+            # 최종 할당 (IoU가 -1이 아닌 살아남은 앵커들만)
+            assigned_mask = values > -0.5
+
+            if assigned_mask.any():
+                conf_t[b, assigned_mask] = gt_labels_b[gt_indices_max[assigned_mask]]
+                target_boxes[b, assigned_mask] = gt_boxes_b[
+                    gt_indices_max[assigned_mask]
+                ]
 
         # Localization Loss (Positive 앵커)
         pos_mask = conf_t > 0
@@ -440,8 +466,11 @@ def train(
             scaler,
         )
 
-        # 3. 검증 실행
-        val_loss, val_cls, val_loc = validate(model, val_loader, criterion, device)
+        # 3. 검증 실행 (속도를 위해 5 Epoch마다 실행)
+        if epoch % 200 == 0 or epoch == num_epochs:
+            val_loss, val_cls, val_loc = validate(model, val_loader, criterion, device)
+        else:
+            val_loss, val_cls, val_loc = 0.0, 0.0, 0.0
 
         # 3-1. Loss 히스토리에 추가
         loss_history["train_loss"].append(train_loss)
@@ -452,11 +481,17 @@ def train(
         loss_history["val_loc_loss"].append(val_loc)
 
         # 4. 로그 출력
-        print(
-            f"Epoch {epoch}/{num_epochs} - "
-            f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
-            f"Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f})"
-        )
+        if epoch % 200 == 0 or epoch == num_epochs:
+            print(
+                f"Epoch {epoch}/{num_epochs} - "
+                f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
+                f"Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f})"
+            )
+        else:
+            print(
+                f"Epoch {epoch}/{num_epochs} - "
+                f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f})"
+            )
 
         # 5. Checkpoint 저장
         os.makedirs("weights", exist_ok=True)
