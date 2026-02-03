@@ -2,11 +2,13 @@ import lmdb
 import os
 from tqdm import tqdm
 
-K = 5
-SWI_DIR = "data/output_images/swi"
-ROI_DIR = "data/output_images/roi"
-SPLITS_DIR = "data/splits"
-LMDB_DIR = "data/lmdb"
+import config
+
+K = config.K_FOLDS
+SWI_DIR = config.SWI_OUTPUT_DIR
+ROI_DIR = config.ROI_OUTPUT_DIR
+SPLITS_DIR = config.SPLITS_DIR
+LMDB_DIR = config.LMDB_DIR
 
 
 def create_lmdb(patient_ids, swi_dir, roi_dir, lmdb_path):
@@ -102,18 +104,16 @@ def main():
         print(f"\n=== Hold-out Test ===")
         print(f"Hold-out 환자 수: {len(holdout_ids)}")
         create_lmdb(
-            holdout_ids,
-            SWI_DIR,
-            ROI_DIR,
-            os.path.join(LMDB_DIR, "holdout_test.lmdb")
+            holdout_ids, SWI_DIR, ROI_DIR, os.path.join(LMDB_DIR, "holdout_test.lmdb")
         )
+
 
 if __name__ == "__main__":
     main()
 
 # data/lmdb/fold_0/train.lmdb
 # ├── "00000_image" → [PNG 바이너리 bytes]
-# ├── "00000_mask"  → [PNG 바이너리 bytes]  
+# ├── "00000_mask"  → [PNG 바이너리 bytes]
 # ├── "00000_name"  → b"VK001_slice_0.png"
 # ├── "00001_image" → [PNG 바이너리 bytes]
 # ├── "00001_mask"  → [PNG 바이너리 bytes]

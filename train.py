@@ -8,8 +8,9 @@ import math
 import os
 import cv2
 import numpy as np
-from utils import jaccard, encode, decode
-from dataset import normalize_16bit, get_transforms
+from src.utils import jaccard, encode, decode
+from src.dataset import normalize_16bit, get_transforms
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 def masks_to_bboxes(masks):
@@ -65,234 +66,41 @@ def masks_to_bboxes(masks):
     return new_bboxes_list
 
 
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2.0, reduction="mean"):
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha  # Positive 샘플에 대한 가중치 (0.25가 일반적)
-        self.gamma = gamma  # 쉬운 샘플을 얼마나 줄일 것인가 (2.0이 일반적)
-        self.reduction = reduction
-
-    def forward(self, inputs, targets):
-        # inputs: (N, num_classes) - 모델의 예측 logits
-        # targets: (N) - 실제 클래스 ID (0: 배경, 1: 병변)
-
-        # Cross Entropy Loss 계산 (reduction='none'으로 각 샘플별 Loss 계산)
-        ce_loss = F.cross_entropy(inputs, targets, reduction="none")
-
-        # Softmax를 통해 예측 확률 pt 계산
-        # targets에 해당하는 클래스의 예측 확률을 가져옴
-        # log(pt) = -ce_loss 이므로 pt = exp(-ce_loss)
-        pt = torch.exp(-ce_loss)
-
-        # Focal Loss 계산
-        # α * (1 - pt)^γ * CE(pt)
-
-        # alpha factor 적용: target이 1 (positive)이면 alpha, 0 (negative)이면 (1-alpha)
-        alpha_factor = torch.where(targets == 1, self.alpha, 1.0 - self.alpha)
-
-        # modulating factor 적용: (1 - pt)^gamma
-        focal_loss = alpha_factor * ((1 - pt) ** self.gamma) * ce_loss
-
-        if self.reduction == "mean":
-            return focal_loss.mean()
-        elif self.reduction == "sum":
-            return focal_loss.sum()
-        else:
-            return focal_loss
-
-
-def ciou_loss(pred_boxes, gt_boxes, eps=1e-7):
-    """
-    CIoU Loss 계산
-    pred_boxes: (N, 4) - [cx, cy, w, h] (decoded)
-    gt_boxes: (N, 4) - [cx, cy, w, h]
-    """
-    # [cx, cy, w, h] -> [x1, y1, x2, y2]
-    pred_x1 = pred_boxes[:, 0] - pred_boxes[:, 2] / 2
-    pred_y1 = pred_boxes[:, 1] - pred_boxes[:, 3] / 2
-    pred_x2 = pred_boxes[:, 0] + pred_boxes[:, 2] / 2
-    pred_y2 = pred_boxes[:, 1] + pred_boxes[:, 3] / 2
-
-    gt_x1 = gt_boxes[:, 0] - gt_boxes[:, 2] / 2
-    gt_y1 = gt_boxes[:, 1] - gt_boxes[:, 3] / 2
-    gt_x2 = gt_boxes[:, 0] + gt_boxes[:, 2] / 2
-    gt_y2 = gt_boxes[:, 1] + gt_boxes[:, 3] / 2
-
-    # 1. IoU 계산
-    inter_x1 = torch.max(pred_x1, gt_x1)
-    inter_y1 = torch.max(pred_y1, gt_y1)
-    inter_x2 = torch.min(pred_x2, gt_x2)
-    inter_y2 = torch.min(pred_y2, gt_y2)
-
-    inter_w = (inter_x2 - inter_x1).clamp(min=0)
-    inter_h = (inter_y2 - inter_y1).clamp(min=0)
-    inter_area = inter_w * inter_h
-
-    pred_area = pred_boxes[:, 2] * pred_boxes[:, 3]
-    gt_area = gt_boxes[:, 2] * gt_boxes[:, 3]
-    union_area = pred_area + gt_area - inter_area + eps
-
-    iou = inter_area / union_area
-
-    # 2. 중심점 거리 (DIoU term)
-    cw_x1 = torch.min(pred_x1, gt_x1)
-    cw_y1 = torch.min(pred_y1, gt_y1)
-    cw_x2 = torch.max(pred_x2, gt_x2)
-    cw_y2 = torch.max(pred_y2, gt_y2)
-
-    cw_w = (cw_x2 - cw_x1).clamp(min=0)
-    cw_h = (cw_y2 - cw_y1).clamp(min=0)
-    c2 = cw_w**2 + cw_h**2 + eps  # 대각선 거리 제곱
-
-    rho2 = (pred_boxes[:, 0] - gt_boxes[:, 0]) ** 2 + (
-        pred_boxes[:, 1] - gt_boxes[:, 1]
-    ) ** 2
-
-    # 3. 종횡비 고려 (CIoU term)
-    v = (4 / (math.pi**2)) * torch.pow(
-        torch.atan(gt_boxes[:, 2] / (gt_boxes[:, 3] + eps))
-        - torch.atan(pred_boxes[:, 2] / (pred_boxes[:, 3] + eps)),
-        2,
-    )
-
-    with torch.no_grad():
-        alpha = v / (1 - iou + v + eps)
-
-    ciou = iou - (rho2 / c2) - (alpha * v)
-    loss = 1.0 - ciou
-    return loss.sum()
-
-
-class MultiBoxLoss(nn.Module):
-    def __init__(
-        self, num_classes=2, iou_threshold=0.5, alpha=0.25, alpha_loc=2.0, gamma=2.0
-    ):
-        super(MultiBoxLoss, self).__init__()
-        self.num_classes = num_classes
-        self.iou_threshold = iou_threshold
-        self.focal_criterion = FocalLoss(alpha=alpha, gamma=gamma, reduction="sum")
-        self.alpha_loc = alpha_loc
-
-    def forward(self, pred_loc, pred_score, anchors, gt_bboxes, gt_labels):
-        """
-        pred_loc: (B, total_anchors, 4)
-        pred_score: (B, total_anchors, num_classes)
-        anchors: (total_anchors, 4)
-        gt_bboxes: list of tensors (B개)
-        gt_labels: list of tensors (B개)
-        """
-
-        batch_size = pred_loc.size(0)
-        num_anchors = anchors.size(0)
-        device = pred_loc.device
-
-        # 1. 매칭 (Anchors <-> GT bboxes)
-        # 병변이 작아서 IoU 조금만 겹쳐도 Positive로 간주
-        conf_t = torch.zeros(batch_size, num_anchors).long().to(device)
-
-        # CIoU Loss를 위해 타겟 좌표를 저장할 텐서 (decoded [cx,cy,w,h])
-        target_boxes = torch.zeros(batch_size, num_anchors, 4).to(device)
-
-        for b in range(batch_size):
-            # 병변 없는 구역
-            if len(gt_bboxes[b]) == 0:
-                continue
-
-            # GPU로 이동
-            gt_boxes_b = gt_bboxes[b].to(device)
-            gt_labels_b = gt_labels[b].to(device)
-
-            # 1. IoU 계산
-            ious = jaccard(gt_boxes_b, anchors)
-
-            # --- ATSS (Adaptive Training Sample Selection) 적용 ---
-            # 목적: 1) IoU가 낮은 불량 앵커 제거 (확신도 상승)
-            #       2) 중복 앵커 발생 시 더 적합한 GT에게 할당 (정확도 상승)
-            K = 9
-            topk_values, topk_idx = ious.topk(K, dim=1)  # (num_gt, K)
-
-            # 1. 동적 임계값 계산 (Mean + Std)
-            iou_mean = topk_values.mean(1, keepdim=True)
-            iou_std = topk_values.std(1, keepdim=True)
-            iou_thresh = iou_mean + iou_std
-
-            # 2. 임계값 넘는 앵커만 "진짜 후보"로 인정
-            is_candidate = topk_values >= iou_thresh
-            is_candidate[:, 0] = True  # Top-1은 무조건 포함 (Recall 보장)
-
-            # 3. 전체 앵커 맵에 후보 마킹
-            # mask: (num_gt, num_anchors)
-            mask = torch.zeros_like(ious, dtype=torch.bool)
-            # topk_idx 위치에 is_candidate 값(T/F)을 뿌림
-            mask.scatter_(1, topk_idx, is_candidate)
-
-            # 4. 중복 할당 경쟁 (IoU 높은 GT가 승리)
-            # 후보가 아닌 곳의 IoU는 -1로 만들어 탈락시킴
-            candidate_ious = ious.clone()
-            candidate_ious[~mask] = -1.0
-
-            # 각 앵커별로 가장 높은 IoU를 가진 GT 선택 (Max over GTs)
-            # values: (num_anchors,), gt_indices_max: (num_anchors)
-            values, gt_indices_max = candidate_ious.max(dim=0)
-
-            # 최종 할당 (IoU가 -1이 아닌 살아남은 앵커들만)
-            assigned_mask = values > -0.5
-
-            if assigned_mask.any():
-                conf_t[b, assigned_mask] = gt_labels_b[gt_indices_max[assigned_mask]]
-                target_boxes[b, assigned_mask] = gt_boxes_b[
-                    gt_indices_max[assigned_mask]
-                ]
-
-        # Localization Loss (Positive 앵커)
-        pos_mask = conf_t > 0
-
-        if pos_mask.sum() == 0:
-            loc_loss = torch.tensor(0.0, device=device)
-        else:
-            # 1. 예측된 오프셋(pred_loc)을 실제 좌표로 디코딩
-            anchors_expanded = anchors.unsqueeze(0).expand_as(pred_loc)
-
-            decoded_pred_boxes = decode(pred_loc[pos_mask], anchors_expanded[pos_mask])
-
-            # 2. CIoU Loss 계산
-            loc_loss = ciou_loss(decoded_pred_boxes, target_boxes[pos_mask])
-
-        # 가중치 적용
-        loc_loss = self.alpha_loc * loc_loss
-
-        # Classification Loss (모든 앵커에 대해 Focal Loss 적용)
-        cls_loss = self.focal_criterion(
-            pred_score.view(-1, self.num_classes), conf_t.view(-1)
-        )
-
-        # Loss Normalization
-        N = max(1, pos_mask.sum().item())
-
-        return (loc_loss + cls_loss) / N, cls_loss / N, loc_loss / N
-
-
 def train_one_epoch(
-    model, train_loader, optimizer, criterion, device, transform, epoch, scaler
+    model,
+    train_loader,
+    optimizer,
+    criterion,
+    device,
+    transform,
+    epoch,
+    num_epochs,
+    scaler,
 ):
     model.train()
     total_loss = 0.0
     total_cls_loss = 0.0
     total_loc_loss = 0.0
 
-    pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
-    for i, (batch_img, batch_mask, batch_bboxes) in enumerate(pbar):
+    pbar = tqdm(train_loader, desc=f"[Epoch {epoch}/ {num_epochs}]")
+    for i, (batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes) in enumerate(
+        pbar
+    ):
         # GPU
         batch_img = batch_img.to(device)
-        batch_mask = batch_mask.to(device)
+        batch_lesion_mask = batch_lesion_mask.to(device)
+        batch_roi_mask = batch_roi_mask.to(device)
 
         # 1. 전처리 및 정규화
-        # 이미지와 마스크를 함께 변환
-        batch_img, batch_mask = transform(batch_img, batch_mask)
+        # 이미지, 병변마스크, 뇌마스크를 함께 변환 (3개 리턴)
+        # data_keys=["image", "mask", "mask"] 설정 덕분에 brain_mask는 밝기/블러 영향 안 받음
+        batch_img, batch_lesion_mask, batch_roi_mask = transform(
+            batch_img, batch_lesion_mask, batch_roi_mask
+        )
 
         # 2. 증강된 마스크에서 BBox 다시 추출
         # Kornia로 인해 위치가 변했을 수 있으므로 마스크에서 역산
-        batch_bboxes = masks_to_bboxes(batch_mask)
+        batch_bboxes = masks_to_bboxes(batch_lesion_mask)
 
         # --- [시각화 디버깅] 증강 결과 확인 (100 배치마다 1번) ---
         # if i % 100 == 0:  # 매 배치 실행은 너무 느리므로 빈도 조절
@@ -342,7 +150,9 @@ def train_one_epoch(
 
         # 2. forward (AMP autocast)
         with torch.amp.autocast("cuda"):
-            pred_locs, pred_scores, anchors = model(batch_img, batch_mask)
+            # model returns 3 items
+            # forward(x, gt_mask)
+            pred_locs, pred_scores, anchors = model(batch_img, batch_lesion_mask)
 
             # 3. GT 준비 (bboxes and label)
             # Anchor 별 매칭
@@ -350,14 +160,26 @@ def train_one_epoch(
                 torch.ones(len(bboxes)).long().to(device) for bboxes in batch_bboxes
             ]
 
-            # 4. MultiBox Loss 계산
+            # 4. MultiBox Loss 계산 (use batch_roi_mask)
             loss, cls_loss, loc_loss = criterion(
-                pred_locs, pred_scores, anchors, batch_bboxes, gt_labels
+                pred_locs,
+                pred_scores,
+                anchors,
+                batch_bboxes,
+                gt_labels,
+                batch_roi_mask,
             )
 
         # 5. Backward (AMP GradScaler)
         optimizer.zero_grad()
         scaler.scale(loss).backward()
+
+        # Gradient Clipping (NaN 방지)
+        # 뇌 바깥 영역은 loss를 무시하기 때문에 가중치 조정 시 학습되지 않았던
+        # 부분에 대해서 기울기 폭발이 일어나는 것으로 보임.
+        # scaler.unscale_(optimizer)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=50.0)
+
         scaler.step(optimizer)
         scaler.update()
 
@@ -382,6 +204,131 @@ def train_one_epoch(
             }
         )
 
+        # --- [앵커 추적 시각화] ---
+        # 매 100 배치(스텝)마다 고정된 샘플에 대한 앵커 변화를 그립니다.
+        # 주의: 이 기능을 위해 'fixed_debug_sample'이 필요하므로, train_one_epoch 인자에 추가하거나
+        # 전역변수/클래스 멤버로 관리해야 하지만, 여기서는 함수 내에서 static처럼 처리하기 위해
+        # 함수 속성(attribute)을 활용하는 트릭을 씁니다.
+
+        if not hasattr(train_one_epoch, "fixed_sample"):
+            # 처음 한 번만 고정 샘플을 저장 (현재 배치의 첫 번째 샘플 사용)
+            # 조건: 병변이 있어야 함
+            if len(batch_bboxes[0]) > 0:
+                train_one_epoch.fixed_sample = {
+                    "img": batch_img[0].clone().detach(),  # (1, 512, 512) 정규화됨
+                    "mask": batch_lesion_mask[0].clone().detach(),  # (1, 512, 512)
+                    "bbox": batch_bboxes[0].clone().detach(),  # (N, 4) 정답
+                    "brain_mask": batch_roi_mask[0].detach()
+                    if "batch_roi_mask" in locals()
+                    else None,
+                }
+                print(f"📌 앵커 추적용 고정 샘플 설정 완료 (Batch {i})")
+
+                # 앵커 고정 (Top-5 IoU 앵커 선택)
+                with torch.no_grad():
+                    # Note: We pass only image because we just need anchors.
+                    # forward(x, gt_mask=None) -> returns 3 values now
+                    _, _, anchors_temp = model(batch_img[0:1])
+
+                gt_box = batch_bboxes[0].to(device)
+                ious = jaccard(gt_box, anchors_temp)  # (num_gt, num_anchors)
+
+                # 가장 큰 놈부터 5개 선택
+                # GT가 여러개면 그중에서도 best GT 기준
+                best_gt_idx = ious.max(dim=1)[0].argmax().item()
+
+                topk_val, topk_idx = ious[best_gt_idx].topk(5)
+
+                train_one_epoch.target_anchor_indices = topk_idx.tolist()
+                train_one_epoch.target_anchor_ious = topk_val.tolist()  # IoU 저장
+                train_one_epoch.target_gt_idx = best_gt_idx
+
+                print(
+                    f"📌 추적할 Top-5 앵커 인덱스: {train_one_epoch.target_anchor_indices}"
+                )
+                print(
+                    f"📌 해당 앵커들의 초기 IoU: {[f'{x:.4f}' for x in train_one_epoch.target_anchor_ious]}"
+                )
+
+        # 10 스텝마다 그리기 (샘플이 설정된 경우만)
+        if hasattr(train_one_epoch, "fixed_sample") and i % 1000 == 0:
+            fs = train_one_epoch.fixed_sample
+
+            with torch.no_grad():
+                inp_img = fs["img"].unsqueeze(0).to(device)
+                inp_mask = fs["mask"].unsqueeze(0).to(device)
+                pred_locs, pred_scores, anchors = model(inp_img, inp_mask)
+
+                # 정답 좌표
+                gt_box = fs["bbox"][train_one_epoch.target_gt_idx].to(device)
+
+            # 이미지 복원
+            viz_img = (fs["img"].detach().cpu().numpy().transpose(1, 2, 0) + 1.0) / 2.0
+            viz_img = (viz_img * 255).clip(0, 255).astype(np.uint8).copy()
+            if viz_img.shape[2] == 1:
+                viz_img = cv2.cvtColor(viz_img, cv2.COLOR_GRAY2BGR)
+            else:
+                viz_img = cv2.cvtColor(viz_img, cv2.COLOR_RGB2BGR)
+
+            H, W = viz_img.shape[:2]
+
+            def draw_box(img, box, color, thickness=1, label=None):
+                cx, cy, w, h = box
+                x1 = int((cx - w / 2) * W)
+                y1 = int((cy - h / 2) * H)
+                x2 = int((cx + w / 2) * W)
+                y2 = int((cy + h / 2) * H)
+                cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+                if label:
+                    cv2.putText(
+                        img,
+                        label,
+                        (x1, y1 - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        color,
+                        1,
+                    )
+
+            # 🟩 정답 (초록) - 한 번만 그림
+            draw_box(viz_img, gt_box.cpu(), (0, 255, 0), 2, "GT")
+
+            # 🔁 Top-5 앵커 Loop + 로그 출력
+            log_msg = [f"🔍 [Step {i}] Top-5 Anchors Tracking:"]
+
+            for rank, a_idx in enumerate(train_one_epoch.target_anchor_indices):
+                # 1. 앵커 원본
+                anchor_box = anchors[a_idx]
+                iou_val = train_one_epoch.target_anchor_ious[rank]
+
+                # 2. 예측
+                pred_loc = pred_locs[0, a_idx]
+                decoded_box = decode(pred_loc.unsqueeze(0), anchor_box.unsqueeze(0))[0]
+                pred_conf = torch.sigmoid(pred_scores[0, a_idx, 1]).item()
+
+                # 로그에 추가
+                log_msg.append(
+                    f"   #{rank + 1}: Conf={pred_conf:.4f}, Initial_IoU={iou_val:.4f}"
+                )
+
+                # 그리기
+                # 🟥 예측 (빨강)
+                label = f"#{rank + 1} Cf:{pred_conf:.2f} IoU:{iou_val:.2f}"
+                draw_box(viz_img, decoded_box.cpu(), (0, 0, 255), 2, label)
+
+                # 화살표 (앵커 중심 -> 예측 중심)
+                acx, acy = int(anchor_box[0] * W), int(anchor_box[1] * H)
+                pcx, pcy = int(decoded_box[0] * W), int(decoded_box[1] * H)
+                cv2.arrowedLine(viz_img, (acx, acy), (pcx, pcy), (0, 255, 255), 1)
+
+            # 로그 출력
+            print("\n".join(log_msg))
+
+            # 저장
+            save_path = f"data/train_debug/track_ep{epoch}_step{i}.png"
+            os.makedirs("data/train_debug", exist_ok=True)
+            cv2.imwrite(save_path, viz_img)
+
     n = len(train_loader)
     return total_loss / n, total_cls_loss / n, total_loc_loss / n
 
@@ -395,15 +342,22 @@ def validate(model, val_loader, criterion, device):
 
     with torch.no_grad():
         pbar = tqdm(val_loader, desc="Validating")
-        for batch_img, batch_mask, batch_bboxes in pbar:
+        for batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes in pbar:
             # GPU
             batch_img = batch_img.to(device)
+            batch_lesion_mask = batch_lesion_mask.to(device)  # Now available
+            batch_roi_mask = batch_roi_mask.to(device)
 
-            # 1. 정규화
+            # (Note: Now we have roi_mask from loader, so no need to create it from image)
+
+            # 정규화
             batch_img = normalize_16bit(batch_img)
 
             # 2. forward
-            pred_locs, pred_scores, anchors = model(batch_img)
+            # Validate -> No GT Mask (zeros) if not available, or use batch_lesion_mask if needed for consistent metric?
+            # Model logic handles None -> Zero mask. But wait, model forward logic handles gt_mask=None.
+            # Passing None to simulate inference mode (no enhancement from GT)
+            pred_locs, pred_scores, anchors = model(batch_img, gt_mask=None)
 
             # 3. GT
             gt_labels = [
@@ -411,7 +365,7 @@ def validate(model, val_loader, criterion, device):
             ]
 
             loss, cls_loss, loc_loss = criterion(
-                pred_locs, pred_scores, anchors, batch_bboxes, gt_labels
+                pred_locs, pred_scores, anchors, batch_bboxes, gt_labels, batch_roi_mask
             )
 
             total_loss += loss.item()
@@ -440,6 +394,10 @@ def train(
     # AMP GradScaler 생성
     scaler = torch.amp.GradScaler("cuda")
 
+    # Scheduler 생성 (CosineAnnealingLR)
+    # T_max: 전체 에포크 수, eta_min: 최소 학습률 (1e-6 정도)
+    scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-7)
+
     best_val_loss = float("inf")
 
     # Loss 히스토리 초기화 (이어서 학습 시 기존 히스토리 유지)
@@ -451,6 +409,8 @@ def train(
             "train_loc_loss": [],
             "val_cls_loss": [],
             "val_loc_loss": [],
+            "train_dice_loss": [],
+            "val_dice_loss": [],
         }
 
     for epoch in range(start_epoch, num_epochs + 1):
@@ -463,6 +423,7 @@ def train(
             device,
             train_transform,
             epoch,
+            num_epochs,
             scaler,
         )
 
@@ -487,11 +448,14 @@ def train(
                 f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
                 f"Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f})"
             )
-        else:
             print(
                 f"Epoch {epoch}/{num_epochs} - "
-                f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f})"
+                f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
+                f"LR: {optimizer.param_groups[0]['lr']:.2e}"
             )
+
+        # 스케줄러 업데이트
+        scheduler.step()
 
         # 5. Checkpoint 저장
         os.makedirs("weights", exist_ok=True)
@@ -499,6 +463,7 @@ def train(
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),  # 스케줄러 상태 저장
             "scaler_state_dict": scaler.state_dict(),
             "train_loss": train_loss,
             "val_loss": val_loss,

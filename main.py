@@ -4,62 +4,27 @@ import os
 import sys
 import torch
 from torch.utils.data import DataLoader
-from utils import Logger
-from convert_nii_folder_to_images import convert_nii_folder_to_images
-from dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH
-from model import SSD_FE
-from train import MultiBoxLoss, train
-from make_stratified_folds import main as make_folds
-from create_lmdb import main as create_lmdb_main
-from extract_bboxes import main as extract_bboxes_main
+from src.utils import Logger
+from scripts.preprocess_data import convert_nii_folder_to_images
+from src.dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH
+from src.model import SSD_FE
+from train import train, validate
+from src.loss import MultiBoxLoss
+from scripts.make_folds import main as make_folds
+from scripts.create_lmdb import main as create_lmdb_main
+from scripts.extract_bboxes import main as extract_bboxes_main
+
+import config
 
 # [설정] Albumentations 업데이트 경고 끄기 (Import 이전에 설정해야 함)
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
-
-BATCH_SIZE = 30
-NUM_EPOCHS = 1000
-NUM_WORKERS = 8
-LEARNING_RATE = 1e-5
-SPLIT_RATIO = 0.2
-IOU_THRESH = 0.35
-ALPHA = 0.75
-ALPHA_LOC = 5.0
-K = 5
-SEED = 42
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-SWI_INPUT_DIR = "data/samsung_data/swi"
-ROI_INPUT_DIR = "data/samsung_data/roi"
-SWI_OUTPUT_DIR = "data/output_images/swi"
-ROI_OUTPUT_DIR = "data/output_images/roi"
-LMDB_DIR = "data/lmdb"
-SPLITS_DIR = "data/splits"
-
-
-def get_results_dir():
-    """
-    결과물 dir 이름 가져오기
-    """
-    run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
-    result_dir = os.path.join("results", f"train_{run_timestamp}")
-    return result_dir
-
-
-def set_results_dir(result_dir):
-    os.makedirs(result_dir, exist_ok=True)
-
-
-def set_logger(result_dir):
-    # 타임 스탬프 출력 및 로그 파일 생성
-    sys.stdout = Logger(os.path.join(result_dir, "log.txt"))
-    print(f"Results directory created at: {result_dir}")
 
 
 def prepare_data():
     # 1. NIfTI → PNG 변환
     print("[1/4] NIfTI → PNG 변환...")
-    convert_nii_folder_to_images(SWI_INPUT_DIR, SWI_OUTPUT_DIR)
-    convert_nii_folder_to_images(ROI_INPUT_DIR, ROI_OUTPUT_DIR)
+    convert_nii_folder_to_images(config.SWI_INPUT_DIR, config.SWI_OUTPUT_DIR)
+    convert_nii_folder_to_images(config.ROI_INPUT_DIR, config.ROI_OUTPUT_DIR)
 
     # 2. Stratified K-Fold + Hold-out 분할
     print("[2/4] Stratified K-Fold 분할...")
@@ -78,17 +43,17 @@ def prepare_data():
 
 def get_fold_loaders(fold_idx):
     """특정 fold의 Train/Val DataLoader 생성"""
-    train_lmdb = os.path.join(LMDB_DIR, f"fold_{fold_idx}", "train.lmdb")
-    val_lmdb = os.path.join(LMDB_DIR, f"fold_{fold_idx}", "test.lmdb")
+    train_lmdb = os.path.join(config.LMDB_DIR, f"fold_{fold_idx}", "train.lmdb")
+    val_lmdb = os.path.join(config.LMDB_DIR, f"fold_{fold_idx}", "test.lmdb")
 
-    train_dataset = CMBsDatasetLMDB(train_lmdb, BBOX_JSON_PATH)
-    val_dataset = CMBsDatasetLMDB(val_lmdb, BBOX_JSON_PATH)
+    train_dataset = CMBsDatasetLMDB(train_lmdb, BBOX_JSON_PATH, is_train=True)
+    val_dataset = CMBsDatasetLMDB(val_lmdb, BBOX_JSON_PATH, is_train=False)
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=config.BATCH_SIZE,
         shuffle=True,
-        num_workers=NUM_WORKERS,
+        num_workers=config.NUM_WORKERS,
         collate_fn=collate_fn,
         pin_memory=True,
         prefetch_factor=2,
@@ -96,9 +61,9 @@ def get_fold_loaders(fold_idx):
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=config.BATCH_SIZE,
         shuffle=False,
-        num_workers=NUM_WORKERS,
+        num_workers=config.NUM_WORKERS,
         collate_fn=collate_fn,
         pin_memory=True,
         prefetch_factor=2,
@@ -115,15 +80,17 @@ def select_pretrained_weights():
     weights 폴더의 가중치 파일 목록을 보여주고 선택하게 함
     Returns: 선택된 가중치 파일 경로 또는 None (새로 학습)
     """
-    weights_dir = "weights"
+    weights_dir = config.WEIGHTS_DIR
 
     # weights 폴더가 없거나 비어있으면 스킵
-    if not os.path.exists(weights_dir):
+    if not os.path.exists(config.WEIGHTS_DIR):
         print("📂 weights 폴더가 없습니다. 새로 학습을 시작합니다.")
         return None
 
     # .pth 파일 목록 가져오기
-    weight_files = sorted([f for f in os.listdir(weights_dir) if f.endswith(".pth")])
+    weight_files = sorted(
+        [f for f in os.listdir(config.WEIGHTS_DIR) if f.endswith(".pth")]
+    )
 
     if not weight_files:
         print("📂 저장된 가중치가 없습니다. 새로 학습을 시작합니다.")
@@ -136,7 +103,7 @@ def select_pretrained_weights():
     print(f"  [0] 🆕 새로 학습 시작 (가중치 로드 안 함)")
 
     for idx, filename in enumerate(weight_files, start=1):
-        filepath = os.path.join(weights_dir, filename)
+        filepath = os.path.join(config.WEIGHTS_DIR, filename)
         file_size = os.path.getsize(filepath) / (1024 * 1024)  # MB
         file_time = datetime.datetime.fromtimestamp(
             os.path.getmtime(filepath)
@@ -157,7 +124,9 @@ def select_pretrained_weights():
                 print("🆕 새로 학습을 시작합니다.")
                 return None
             elif 1 <= choice <= len(weight_files):
-                selected_file = os.path.join(weights_dir, weight_files[choice - 1])
+                selected_file = os.path.join(
+                    config.WEIGHTS_DIR, weight_files[choice - 1]
+                )
                 print(f"✅ 선택된 가중치: {selected_file}")
                 return selected_file
             else:
@@ -172,7 +141,7 @@ def select_pretrained_weights():
 def train_fold(fold_idx, result_dir, pretrained_weights=None):
     """단일 Fold 학습"""
     print(f"\n{'=' * 50}")
-    print(f"  FOLD {fold_idx + 1} / {K}")
+    print(f"  FOLD {fold_idx + 1} / {config.K_FOLDS}")
     print(f"{'=' * 50}")
 
     # 1. Fold별 결과 디렉토리
@@ -183,13 +152,17 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None):
     train_loader, val_loader = get_fold_loaders(fold_idx)
 
     # 3. 모델 초기화
-    model = SSD_FE(num_classes=2).to(DEVICE)
+    model = SSD_FE(num_classes=2).to(config.DEVICE)
 
     # 4. 손실 함수 & 옵티마이저
     criterion = MultiBoxLoss(
-        num_classes=2, iou_threshold=IOU_THRESH, alpha=ALPHA, alpha_loc=ALPHA_LOC, gamma=2.0
+        num_classes=2,
+        iou_threshold=config.TRAIN_IOU_THRESH,
+        alpha=config.ALPHA,
+        gamma=config.GAMMA,
+        neg_pos_ratio=config.NEG_POS_RATIO,
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
     # 5. 시작
     start_epoch = 1
@@ -198,7 +171,7 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None):
     # 5-1. 사전 학습 가중치 로드 (checkpoint 형태)
     if pretrained_weights and os.path.exists(pretrained_weights):
         print(f"  📥 가중치 로드 중: {pretrained_weights}")
-        checkpoint = torch.load(pretrained_weights, map_location=DEVICE)
+        checkpoint = torch.load(pretrained_weights, map_location=config.DEVICE)
 
         # checkpoint 형태인지 확인 (epoch 키가 있으면 새로운 형식)
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
@@ -232,8 +205,8 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None):
         val_loader=val_loader,
         optimizer=optimizer,
         criterion=criterion,
-        device=DEVICE,
-        num_epochs=NUM_EPOCHS,
+        device=config.DEVICE,
+        num_epochs=config.NUM_EPOCHS,
         fold_idx=fold_idx,
         start_epoch=start_epoch,
         loss_history=loss_history,
@@ -244,7 +217,7 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None):
 
 def get_holdout_loader():
     """Hold-out Test Set DataLoader 생성"""
-    holdout_lmdb = os.path.join(LMDB_DIR, "holdout", "test.lmdb")
+    holdout_lmdb = os.path.join(config.LMDB_DIR, "holdout", "test.lmdb")
 
     # LMDB가 없으면 생성 필요
     if not os.path.exists(holdout_lmdb):
@@ -256,9 +229,9 @@ def get_holdout_loader():
 
     holdout_loader = DataLoader(
         holdout_dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=config.BATCH_SIZE,
         shuffle=False,
-        num_workers=NUM_WORKERS,
+        num_workers=config.NUM_WORKERS,
         collate_fn=collate_fn,
         pin_memory=True,
     )
@@ -282,10 +255,13 @@ def evaluate_holdout(fold_results, result_dir):
         return
 
     # 2. 각 Fold 모델 로드 및 평가
-    from train import validate
 
     criterion = MultiBoxLoss(
-        num_classes=2, iou_threshold=IOU_THRESH, alpha=ALPHA, alpha_loc=ALPHA_LOC, gamma=2.0
+        num_classes=2,
+        iou_threshold=config.IOU_THRESH,
+        alpha=config.ALPHA,
+        gamma=config.GAMMA,
+        neg_pos_ratio=config.NEG_POS_RATIO,
     )
 
     fold_losses = []
@@ -298,11 +274,13 @@ def evaluate_holdout(fold_results, result_dir):
             continue
 
         # 모델 로드
-        model = SSD_FE(num_classes=2).to(DEVICE)
-        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        model = SSD_FE(num_classes=2).to(config.DEVICE)
+        model.load_state_dict(torch.load(model_path, map_location=config.DEVICE))
 
         # 평가
-        loss, cls_loss, loc_loss = validate(model, holdout_loader, criterion, DEVICE)
+        loss, cls_loss, loc_loss = validate(
+            model, holdout_loader, criterion, config.DEVICE
+        )
         fold_losses.append((fold_idx, loss, cls_loss, loc_loss))
 
         print(
@@ -333,13 +311,16 @@ def evaluate_holdout(fold_results, result_dir):
 def main():
     multiprocessing.freeze_support()
 
-    result_dir = get_results_dir()
-    set_results_dir(result_dir)
-    set_logger(result_dir)
+    run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
+    result_dir = os.path.join(config.RESULTS_DIR, f"train_{run_timestamp}")
+    os.makedirs(result_dir, exist_ok=True)
+    sys.stdout = Logger(os.path.join(result_dir, "log.txt"))
 
-    print(f"Device: {DEVICE}")
+    print(f"Results directory created at: {result_dir}")
+
+    print(f"Device: {config.DEVICE}")
     print(
-        f"K-Fold: {K}, Epochs: {NUM_EPOCHS}, Batch: {BATCH_SIZE}, LR: {LEARNING_RATE}"
+        f"K-Fold: {config.K_FOLDS}, Epochs: {config.NUM_EPOCHS}, Batch: {config.BATCH_SIZE}, LR: {config.LEARNING_RATE}"
     )
 
     # 2. 데이터 준비 (NIfTI → PNG)
@@ -347,14 +328,14 @@ def main():
     prepare_data()
 
     # 2.5 가중치 선택 (이어서 학습할지 결정)
-    print("\n[Step 1.5] 사전 학습 가중치 선택...")
+    print("\n[Step 2] 사전 학습 가중치 선택...")
     pretrained_weights = select_pretrained_weights()
 
     # 3. K-Fold 학습
-    print("\n[Step 2] K-Fold 학습 시작...")
+    print("\n[Step 3] K-Fold 학습 시작...")
     fold_results = []
 
-    for fold_idx in range(K):
+    for fold_idx in range(config.K_FOLDS):
         fold_dir = train_fold(fold_idx, result_dir, pretrained_weights)
         fold_results.append(fold_dir)
 

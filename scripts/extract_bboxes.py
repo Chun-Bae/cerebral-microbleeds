@@ -4,9 +4,11 @@ import numpy as np
 import json
 from tqdm import tqdm
 
+import config
+
 # lmdb 안씀
-SWI_DIR = "data/output_images/swi"
-ROI_DIR = "data/output_images/roi"
+SWI_DIR = config.SWI_OUTPUT_DIR
+ROI_DIR = config.ROI_OUTPUT_DIR
 OUTPUT_DIR_SWI = "data/bbox_visualization/swi"
 OUTPUT_DIR_ROI = "data/bbox_visualization/roi"
 BBOX_JSON_DIR = "data/bboxes"

@@ -5,10 +5,12 @@ import nibabel as nib
 from scipy.ndimage import label
 from sklearn.model_selection import train_test_split
 
-K = 5
-SEED = 42
-SAVE_DIR = r"./data/splits"
-ROI_DIR = r"./data/samsung_data/roi"
+import config
+
+K = config.K_FOLDS
+SEED = config.SEED
+SAVE_DIR = config.SPLITS_DIR
+ROI_DIR = config.ROI_INPUT_DIR
 
 EXTREME_ALWAYS_TRAIN = True
 

@@ -3,21 +3,24 @@ import torch
 torch.backends.cudnn.benchmark = True
 import torch.nn.functional as F
 from torchvision.ops import nms
-from utils import decode, jaccard
+from src.utils import decode, jaccard
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 import os
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH
-from model import SSD_FE
-from utils import Logger
+from src.dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH, normalize_16bit
+from src.model import SSD_FE
+from src.utils import Logger
 import sys
 import platform
 
 # 한글 폰트 설정 (NanumGothic이 없으면 기본 폰트 사용)
 import matplotlib.font_manager as fm
+
+import config
+
 
 available_fonts = [f.name for f in fm.fontManager.ttflist]
 if "NanumGothic" in available_fonts:
@@ -25,33 +28,81 @@ if "NanumGothic" in available_fonts:
     plt.rcParams["axes.unicode_minus"] = False
 
 
-def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.3):
+def get_ignored_fn(pred_loc, pred_score, anchors, gt_boxes):
     """
-    약 60,000개 앵커 → 최종 예측 0~50개로 필터링
+    GT와 매칭되었지만(위치 정확), 점수가 낮아서(배경 오분류) 버려진 앵커들을 찾음
+    -> 각 GT별로 가장 IoU가 높은 앵커 1개씩을 추적하여,
+       그 앵커의 점수가 CONF_THRESH 미만이면 '파란색 박스' 후보로 리턴
+    """
+    if len(gt_boxes) == 0:
+        return np.array([]), np.array([])
 
-    Args:
-        pred_locs: (N, 4) - 모델이 예측한 offset [dcx, dcy, dw, dh]
-        pred_scores: (N, 2) - [배경 확률, 병변 확률]
-        anchors: (N, 4) - 앵커 박스 [cx, cy, w, h]
-        conf_thresh: confidence 임계값 (기본 0.5)
-        nms_thresh: NMS IoU 임계값 (기본 0.3)
+    # 1. 모든 앵커 Decode (시각화용이므로 속도보다 정확성)
+    # 메모리 절약을 위해 모든 앵커를 다 하기보다, IoU 계산을 먼저 Default Anchor로 약식 진행할 수도 있으나,
+    # 정확한 '자리 잡음'을 보려면 Decode를 해야 함. (6만개 정도는 괜찮음)
 
-    Returns:
-        final_boxes: (M, 4) - 최종 예측 박스 [cx, cy, w, h]
-        final_scores: (M,) - 최종 confidence scores
+    # Softmax
+    probs = F.softmax(pred_score, dim=-1)
+    scores = probs[:, 1]  # (N_anchors,)
+
+    # 2. Decode
+    decoded_boxes = decode(pred_loc, anchors)  # (N_anchors, 4) [cx,cy,w,h]
+
+    # [cx, cy, w, h] -> [x1, y1, x2, y2]
+    decoded_boxes_xyxy = torch.zeros_like(decoded_boxes)
+    decoded_boxes_xyxy[:, 0] = decoded_boxes[:, 0] - decoded_boxes[:, 2] / 2
+    decoded_boxes_xyxy[:, 1] = decoded_boxes[:, 1] - decoded_boxes[:, 3] / 2
+    decoded_boxes_xyxy[:, 2] = decoded_boxes[:, 0] + decoded_boxes[:, 2] / 2
+    decoded_boxes_xyxy[:, 3] = decoded_boxes[:, 1] + decoded_boxes[:, 3] / 2
+
+    # GT도 변환
+    gt_boxes_xyxy = torch.zeros_like(gt_boxes)
+    gt_boxes_xyxy[:, 0] = gt_boxes[:, 0] - gt_boxes[:, 2] / 2
+    gt_boxes_xyxy[:, 1] = gt_boxes[:, 1] - gt_boxes[:, 3] / 2
+    gt_boxes_xyxy[:, 2] = gt_boxes[:, 0] + gt_boxes[:, 2] / 2
+    gt_boxes_xyxy[:, 3] = gt_boxes[:, 1] + gt_boxes[:, 3] / 2
+
+    # 3. IoU 계산 (GT vs All Decoded Anchors)
+    # jaccard는 [x1,y1,x2,y2] 기준 동작 (utils.py 확인 결과 jaccard 내부에서 변환하지만,
+    # utils.jaccard는 [cx,cy,w,h] 입력을 가정함.
+    # 따라서 decoded_boxes(cx,cy,w,h)를 그대로 넣어야 함.)
+
+    ious = jaccard(gt_boxes, decoded_boxes)  # (num_gt, num_anchors)
+
+    ignored_boxes = []
+    ignored_scores = []
+
+    # 각 GT별로 가장 잘 맞는 앵커 확인
+    for i in range(len(gt_boxes)):
+        # i번째 GT와 가장 IoU가 높은 앵커 인덱스
+        best_iou_val, best_idx = ious[i].max(dim=0)
+
+        # IoU가 어느정도(0.3) 이상인 경우에만 "자리를 잡았다"고 인정
+        if best_iou_val > 0.3:
+            # 해당 앵커의 점수가 임계값보다 낮으면 -> 억울한 FN (파란색 대상)
+            if scores[best_idx] < config.CONF_THRESH:
+                ignored_boxes.append(decoded_boxes[best_idx].cpu().numpy())
+                ignored_scores.append(scores[best_idx].item())
+
+    return np.array(ignored_boxes), np.array(ignored_scores)
+
+
+def post_process(
+    pred_locs,
+    pred_scores,
+    anchors,
+    mask_map=None,  # [New] 배경 필터링용 마스크 (H, W)
+):
+    """
+    단일 이미지 후처리
+    CONF_THRESH, NMS_THRESH 사용
     """
     # 1. Softmax → 병변 클래스 확률만 추출
     probs = F.softmax(pred_scores, dim=-1)
     scores = probs[:, 1]
-    # print(f"Max score: {scores.max()}, Min score: {scores.min()}, Mean score: {scores.mean()}")
-    # top_k_val = 20
-    # if len(scores) > top_k_val:
-    #     scores, idx = scores.topk(top_k_val)
-    #     pred_locs = pred_locs[idx]
-    #     anchors = anchors[idx]
 
     # 2. Confidence 필터링
-    mask = scores > conf_thresh
+    mask = scores > config.CONF_THRESH
     # 병변이 없으면 예측 x
     if mask.sum() == 0:
         return torch.zeros((0, 4), device=anchors.device), torch.zeros(
@@ -67,6 +118,43 @@ def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.
     # decode: 앵커 + offset → 실제 bbox [cx, cy, w, h]
     boxes = decode(filtered_locs, filter_anchors)
 
+    # --- [Background Filtering] Pre-NMS ---
+    # 중요: NMS 전에 배경 박스를 지워야, 진짜 병변이 NMS로 인해 삭제되는 것을 방지함.
+    # [Fix] 단순 Image Intensity > 0.05로 필터링하면 어두운 병변(CMB)까지 지워질 수 있음.
+    # 따라서 명시적인 ROI Mask(Brain Mask)를 사용해야 함.
+    if mask_map is not None:
+        H, W = mask_map.shape
+        keep_indices = []
+
+        # 앵커 위치 확인을 위해 CPU로 (이미 filtered_anchors가 있음)
+        anchors_cpu = filter_anchors.detach().cpu().numpy()
+
+        for idx, anchor in enumerate(anchors_cpu):
+            cx, cy, _, _ = anchor
+            px = int(cx * W)
+            py = int(cy * H)
+            px = max(0, min(W - 1, px))
+            py = max(0, min(H - 1, py))
+
+            # 뇌 마스크(ROI) 내부인지 확인
+            # mask_map은 Binary (0 or 1) 가정 -> 0보다 크면 Brain
+            # 만약 mask_map이 이미지 자체라면 위험함. (수정됨)
+            if mask_map[py, px] > 0:
+                keep_indices.append(idx)
+
+        # 필터링 적용
+        if len(keep_indices) != len(boxes):
+            keep_indices = torch.as_tensor(
+                keep_indices, device=boxes.device, dtype=torch.long
+            )
+            boxes = boxes[keep_indices]
+            filtered_scores = filtered_scores[keep_indices]
+            # 만약 다 지워졌다면 빈 텐서 반환
+            if len(boxes) == 0:
+                return torch.zeros((0, 4), device=anchors.device), torch.zeros(
+                    (0,), device=anchors.device
+                )
+
     # 4. [cx, cy, w, h] → [x1, y1, x2, y2] 변환
     boxes_xyxy = torch.zeros_like(boxes)
     boxes_xyxy[:, 0] = boxes[:, 0] - boxes[:, 2] / 2  # x1
@@ -74,9 +162,13 @@ def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.
     boxes_xyxy[:, 2] = boxes[:, 0] + boxes[:, 2] / 2  # x2
     boxes_xyxy[:, 3] = boxes[:, 1] + boxes[:, 3] / 2  # y2
 
-    # print(f"Before NMS: {len(boxes_xyxy)}")
     # 5. NMS (Non-Maximum Suppression)
-    keep = nms(boxes_xyxy, filtered_scores, nms_thresh)
+    # 이제 유령 박스가 사라졌으므로 안전하게 NMS 수행
+    keep = nms(boxes_xyxy, filtered_scores, config.NMS_THRESH)
+    if keep.size(0) > 200:
+        # 점수 순 정렬되어 있다고 가정하거나, 다시 sort
+        # nms는 보통 점수 순으로 keep을 반환함 (torchvision 기준)
+        keep = keep[:200]
 
     # 6. 최종 결과 (cx, cy, w, h 유지)
     final_boxes = boxes[keep]
@@ -86,27 +178,31 @@ def post_process(pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.
 
 
 def post_process_batch(
-    pred_locs, pred_scores, anchors, conf_thresh=0.5, nms_thresh=0.3
+    pred_locs,
+    pred_scores,
+    anchors,
+    roi_masks=None,  # [Fix] Images -> ROI Masks
 ):
     """
     배치 단위 후처리
-
-    Args:
-        pred_locs: (B, N, 4)
-        pred_scores: (B, N, 2)
-        anchors: (N, 4)
-
-    Returns:
-        all_boxes: list of (M_i, 4) tensors
-        all_scores: list of (M_i,) tensors
     """
     batch_size = pred_locs.size(0)
     all_boxes = []
     all_scores = []
 
     for b in range(batch_size):
+        # 마스크 추출
+        mask_map = None
+        if roi_masks is not None:
+            # (B, 1, H, W) -> (H, W)
+            # 이미 Binary(0 or 1)로 로드되어 있음 (dataset.py 참조)
+            mask_map = roi_masks[b, 0].cpu().numpy()
+
         boxes, scores = post_process(
-            pred_locs[b], pred_scores[b], anchors, conf_thresh, nms_thresh
+            pred_locs[b],
+            pred_scores[b],
+            anchors,
+            mask_map=mask_map,  # Pass roi_mask
         )
         all_boxes.append(boxes)
         all_scores.append(scores)
@@ -114,14 +210,13 @@ def post_process_batch(
     return all_boxes, all_scores
 
 
-def match_boxes(pred_boxes, gt_boxes, iou_threshold=0.3):
+def match_boxes(pred_boxes, gt_boxes):
     """
     예측 vs 정답 매칭 → TP, FP, FN 계산
 
     Args:
         pred_boxes: (M, 4) - 모델 예측
         gt_boxes: (K, 4) - 정답
-        iou_threshold: 매칭 기준
 
     Returns:
         tp: True Positive 개수
@@ -156,7 +251,7 @@ def match_boxes(pred_boxes, gt_boxes, iou_threshold=0.3):
                 best_iou = ious[gt_idx, pred_idx]
                 best_gt_idx = gt_idx
 
-        if best_iou >= iou_threshold:
+        if best_iou >= config.TEST_IOU_THRESH:
             tp += 1
             matched_gt.add(best_gt_idx)
 
@@ -166,22 +261,25 @@ def match_boxes(pred_boxes, gt_boxes, iou_threshold=0.3):
     return tp, fp, fn
 
 
-def compute_ap(all_preds, all_gts, iou_threshold=0.3):
+def get_all_detections(all_preds):
     """
-    all_preds: [(boxes, scores, image_id), ...] 전체 예측
-    all_gts: {image_id: gt_boxes} 전체 정답
+    AP 계산을 위해 모든 예측 결과를 Score 순으로 정렬하여 반환
     """
-    # 1. 모든 예측을 confidence 순으로 정렬
     all_detections = []
-    for boxes, scores, img_id in tqdm(all_preds, desc="AP 데이터 수집"):
+    # tqdm은 상위 함수에서 제어하거나 여기서는 생략 (너무 자주 출력되면 시끄러움)
+    for boxes, scores, img_id in all_preds:
         for box, score in zip(boxes, scores):
             all_detections.append((score, box, img_id))
 
-    # 내림차순
-    print("정렬 시작...")
+    # 내림차순 정렬
     all_detections.sort(key=lambda x: x[0], reverse=True)
-    print("정렬 완료!")
+    return all_detections
 
+
+def calculate_ap(all_detections, all_gts, iou_threshold=0.3):
+    """
+    정렬된 detection 리스트를 받아 AP 계산
+    """
     # 2. 전체 GT 개수
     total_gt = sum(len(gt) for gt in all_gts.values())
 
@@ -190,11 +288,12 @@ def compute_ap(all_preds, all_gts, iou_threshold=0.3):
 
     matched = {img_id: set() for img_id in all_gts.keys()}
 
-    # 3. 하나씩 추가하면서　TP／FP 평가
+    # 3. 하나씩 추가하면서 TP/FP 평가
     tp_list = []
     fp_list = []
 
-    for score, box, img_id in tqdm(all_detections, desc="AP 계산"):
+    # 이미 정렬된 상태로 들어옴
+    for score, box, img_id in all_detections:
         gt_boxes = all_gts.get(img_id, [])
 
         # GT 아닌데 긍정 예측
@@ -222,6 +321,7 @@ def compute_ap(all_preds, all_gts, iou_threshold=0.3):
             # TP
             tp_list.append(1)
             fp_list.append(0)
+            matched[img_id].add(best_gt_idx)
         else:
             # FP
             tp_list.append(0)
@@ -234,7 +334,7 @@ def compute_ap(all_preds, all_gts, iou_threshold=0.3):
     # Precision, Recall 계산
     total_pred = tp_cumsum + fp_cumsum
 
-    if total_pred[-1] > 0:
+    if len(total_pred) > 0 and total_pred[-1] > 0:
         precisions = tp_cumsum / total_pred
     else:
         precisions = torch.zeros_like(tp_cumsum)
@@ -244,8 +344,7 @@ def compute_ap(all_preds, all_gts, iou_threshold=0.3):
     else:
         recalls = torch.zeros_like(tp_cumsum)
 
-    # 5. AP 계산 (11-point interpolation 또는 all-point)
-    # All-point interpolation
+    # 5. AP 계산 (All-point interpolation)
     precisions = torch.cat([torch.tensor([1.0]), precisions])
     recalls = torch.cat([torch.tensor([0.0]), recalls])
 
@@ -259,6 +358,14 @@ def compute_ap(all_preds, all_gts, iou_threshold=0.3):
         ap += (recalls[i] - recalls[i - 1]) * precisions[i]
 
     return ap.item()
+
+
+def compute_ap(all_preds, all_gts):
+    """
+    기존 호환성 유지용 Wrapper (Global TEST_IOU_THRESH 사용)
+    """
+    all_detections = get_all_detections(all_preds)
+    return calculate_ap(all_detections, all_gts, config.TEST_IOU_THRESH)
 
 
 def plot_froc(fps_per_image, sensitivities, save_path):
@@ -363,7 +470,7 @@ def plot_confusion_matrix(tp, fp, fn, save_path):
     print(f"✅ Confusion Matrix 저장: {save_path}")
 
 
-def compute_froc_data(all_preds, all_gts, num_images, iou_threshold=0.3):
+def compute_froc_data(all_preds, all_gts, num_images):
     """
     FROC 곡선용 데이터 계산
 
@@ -398,9 +505,9 @@ def compute_froc_data(all_preds, all_gts, num_images, iou_threshold=0.3):
                 if gt_idx in matched[img_id]:
                     continue
                 iou = jaccard(gt_box.unsqueeze(0), box.unsqueeze(0))[0, 0].item()
-                if iou >= iou_threshold:
+                if iou >= config.TEST_IOU_THRESH:
                     is_tp = True
-                    matched[img_id].add(gt_idx)
+                    matched_gt.add(gt_idx)
                     break
 
         if is_tp:
@@ -416,7 +523,15 @@ def compute_froc_data(all_preds, all_gts, num_images, iou_threshold=0.3):
 
 
 def visualize_predictions(
-    img, gt_boxes, pred_boxes, pred_scores, save_path, iou_threshold=0.3, min_box_size=8
+    img,
+    gt_boxes,
+    pred_boxes,
+    pred_scores,
+    save_path,
+    ignored_boxes=None,
+    ignored_scores=None,
+    iou_threshold=0.3,
+    min_box_size=8,
 ):
     H, W = img.shape[:2]
 
@@ -425,7 +540,7 @@ def visualize_predictions(
     else:
         vis = img.copy()
 
-    # GT 그리기 (초록색)
+        # GT 그리기 (초록색)
     for box in gt_boxes:
         cx, cy, w, h = map(float, box)
         x1 = int((cx - w / 2) * W)
@@ -436,7 +551,7 @@ def visualize_predictions(
         # 안전하게 정수 변환 및 범위 제한
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(W - 1, x2), min(H - 1, y2)
-        cv2.rectangle(vis, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+        cv2.rectangle(vis, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 1)
 
     # Pred 그리기 (빨간색)
     for box, score in zip(pred_boxes, pred_scores):
@@ -457,25 +572,55 @@ def visualize_predictions(
             ix2, iy2 = int(min(W - 1, x2)), int(min(H - 1, y2))
 
             # OpenCV 함수 호출 전 좌표 재검증
-            cv2.rectangle(vis, (ix1, iy1), (ix2, iy2), (0, 0, 255), 2)
+            cv2.rectangle(vis, (ix1, iy1), (ix2, iy2), (0, 0, 255), 1)
             cv2.putText(
                 vis,
                 f"{float(score):.2f}",
                 (ix1, max(15, iy1 - 5)),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
+                0.3,
                 (0, 0, 255),
                 1,
             )
         except (ValueError, OverflowError):
             continue
 
+    # Ignored FN 그리기 (파란색) - 위치는 잡았으나 점수가 낮아 버려진 녀석들
+    if ignored_boxes is not None and len(ignored_boxes) > 0:
+        for box, score in zip(ignored_boxes, ignored_scores):
+            cx, cy, w, h = map(float, box)
+
+            if not all(np.isfinite([cx, cy, w, h])) or w <= 0 or h <= 0:
+                continue
+
+            x1 = int((cx - w / 2) * W)
+            y1 = int((cy - h / 2) * H)
+            x2 = int((cx + w / 2) * W)
+            y2 = int((cy + h / 2) * H)
+
+            try:
+                ix1, iy1 = int(max(0, x1)), int(max(0, y1))
+                ix2, iy2 = int(min(W - 1, x2)), int(min(H - 1, y2))
+
+                # 파란색 (BGR: 255, 0, 0)
+                cv2.rectangle(vis, (ix1, iy1), (ix2, iy2), (255, 0, 0), 1)
+                # 점수 표시 (파란색)
+                cv2.putText(
+                    vis,
+                    f"{float(score):.2f}",
+                    (ix1, max(15, iy2 + 15)),  # 박스 아래쪽에 표시
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.3,
+                    (255, 0, 0),
+                    1,
+                )
+            except (ValueError, OverflowError):
+                continue
+
     cv2.imwrite(save_path, vis)
 
 
-def evaluate(
-    model, testloader, dataset, device, save_dir, conf_thresh=0.5, iou_thresh=0.3
-):
+def evaluate(model, testloader, dataset, device, save_dir):
     """
     전체 평가: TP/FP/FN, mAP, FROC, Confusion Matrix, 시각화
     """
@@ -497,25 +642,29 @@ def evaluate(
 
     with torch.no_grad():
         pbar = tqdm(testloader, desc="평가+시각화")
-        for batch_img, batch_mask, batch_bboxes in pbar:
+        for batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes in pbar:
             batch_img = batch_img.to(device)
+            batch_img = normalize_16bit(batch_img).to(device)
 
             # 1. 추론
-            pred_locs, pred_scores, anchors = model(batch_img, batch_mask.to(device))
+            # model returns 3 items
+            pred_locs, pred_scores, anchors = model(batch_img)
 
             # 2. 후처리
+            # [Fix] 이미지 대신 ROI Mask 전달
             pred_boxes_list, pred_scores_list = post_process_batch(
-                pred_locs, pred_scores, anchors, conf_thresh
+                pred_locs, pred_scores, anchors, roi_masks=batch_roi_mask
             )
 
             # 3. 배치 내 각 이미지 처리
             for b in range(len(batch_bboxes)):
                 pred_boxes = pred_boxes_list[b]
                 pred_score = pred_scores_list[b]
+
                 gt_boxes = batch_bboxes[b].to(device)
 
                 # TP, FP, FN
-                tp, fp, fn = match_boxes(pred_boxes, gt_boxes, iou_thresh)
+                tp, fp, fn = match_boxes(pred_boxes, gt_boxes)
                 total_tp += tp
                 total_fp += fp
                 total_fn += fn
@@ -525,14 +674,17 @@ def evaluate(
                 all_gts[img_id] = gt_boxes.cpu()
 
                 # 시각화 저장 (MRI: 16-bit grayscale → 8-bit)
-                img_np = batch_img[b].cpu().numpy()
+                img_np = batch_img[b].detach().cpu().numpy()
                 if len(img_np.shape) == 3:
                     img_np = img_np.transpose(1, 2, 0)  # (C, H, W) → (H, W, C)
-                    # 3채널 grayscale이면 1채널만 사용
+                    # 3채널(Prev, Curr, Next)이면 중앙(Curr, index 1) 사용
                     if img_np.shape[2] == 3:
-                        img_np = img_np[:, :, 0]  # 첫 번째 채널만 사용
-                    # 16-bit (0~65535) → 8-bit (0~255)
-                    img_np = (img_np / 256).clip(0, 255).astype(np.uint8)
+                        img_np = img_np[:, :, 1]  # 두 번째 채널(Center) 사용
+                    elif img_np.shape[2] == 1:
+                        img_np = img_np[:, :, 0]
+
+                    # Normalized (-1~1) → 8-bit (0~255)
+                    img_np = ((img_np + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
 
                 gt_np = gt_boxes.cpu().numpy()
                 pred_np = (
@@ -542,6 +694,15 @@ def evaluate(
                     pred_score.cpu().numpy() if len(pred_score) > 0 else np.array([])
                 )
 
+                # "배경으로 오분류된 FN" 찾기 (파란색 박스용)
+                # 현재 배치의 pred_locs[b], pred_scores[b] 사용
+                ign_boxes_np, ign_scores_np = get_ignored_fn(
+                    pred_locs[b],
+                    pred_scores[b],
+                    anchors,
+                    gt_boxes,
+                )
+
                 # 파일명 결정
                 if hasattr(dataset, "idx_to_name") and img_id in dataset.idx_to_name:
                     filename = dataset.idx_to_name[img_id]
@@ -549,7 +710,15 @@ def evaluate(
                     filename = f"img_{img_id:05d}.png"
 
                 save_path = os.path.join(vis_dir, filename)
-                visualize_predictions(img_np, gt_np, pred_np, pred_s_np, save_path)
+                visualize_predictions(
+                    img_np,
+                    gt_np,
+                    pred_np,
+                    pred_s_np,
+                    save_path,
+                    ignored_boxes=ign_boxes_np,
+                    ignored_scores=ign_scores_np,
+                )
                 vis_count += 1
 
                 img_id += 1
@@ -581,12 +750,26 @@ def evaluate(
     )
 
     # 5. AP 계산
-    ap = compute_ap(all_preds, all_gts, iou_thresh)
+    # 5-1. 사용자 지정 IoU (기존 방식)
+    # 정렬은 한 번만 수행
+    print("\n  📐 AP 계산을 위한 데이터 정렬 중...")
+    all_detections = get_all_detections(all_preds)
+
+    ap = calculate_ap(all_detections, all_gts, config.TEST_IOU_THRESH)
+
+    # 5-2. COCO Style mAP (0.5 ~ 0.95, step 0.05)
+    coco_thresholds = np.arange(0.5, 1.0, 0.05)
+    coco_aps = []
+
+    print("  📐 COCO Style mAP 계산 중 (0.5 ~ 0.95)...")
+    for thr in coco_thresholds:
+        val = calculate_ap(all_detections, all_gts, thr)
+        coco_aps.append(val)
+
+    mAP_coco = np.mean(coco_aps)
 
     # 6. FROC 데이터 계산 & 플롯
-    fps_per_image, sensitivities = compute_froc_data(
-        all_preds, all_gts, img_id, iou_thresh
-    )
+    fps_per_image, sensitivities = compute_froc_data(all_preds, all_gts, img_id)
     if len(fps_per_image) > 0:
         plot_froc(
             fps_per_image, sensitivities, os.path.join(save_dir, "froc_curve.png")
@@ -605,7 +788,10 @@ def evaluate(
         "Precision": precision,
         "Recall": recall,
         "F1": f1,
-        "AP": ap,
+        f"AP@{config.TEST_IOU_THRESH} (Target)": ap,
+        "mAP@[.5:.95]": mAP_coco,
+        "AP@0.50": coco_aps[0],
+        "AP@0.75": coco_aps[5] if len(coco_aps) > 5 else 0,
     }
 
     # 로그 출력
@@ -614,7 +800,7 @@ def evaluate(
     print("=" * 50)
     for k, v in results.items():
         if isinstance(v, float):
-            print(f"  {k}: {v:.4f}")
+            print(f"  {k:<20}: {v:.4f}")
         else:
             print(f"  {k}: {v}")
     print("=" * 50)
@@ -657,12 +843,6 @@ if __name__ == "__main__":
         default="data/lmdb/holdout_test.lmdb",
         help="Path to LMDB dataset",
     )
-    parser.add_argument(
-        "--conf_thresh",
-        type=float,
-        default=0.5,
-        help="Confidence threshold for detection (default: 0.5)",
-    )
     args = parser.parse_args()
 
     # ==================== 설정 ====================
@@ -670,8 +850,6 @@ if __name__ == "__main__":
     LMDB_PATH = args.lmdb_path
     BATCH_SIZE = 32
     NUM_WORKERS = 8
-    CONF_THRESH = args.conf_thresh
-    IOU_THRESH = 0.3
 
     # 타임스탬프 폴더 생성
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
@@ -688,6 +866,11 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+
+    print(f"Evaluation Config:")
+    print(f"  CONF_THRESH: {config.CONF_THRESH}")
+    print(f"  IOU_THRESH:  {config.IOU_THRESH}")
+    print(f"  NMS_THRESH:  {config.NMS_THRESH}")
 
     # 모델 로드
     model = SSD_FE(num_classes=2).to(device)
@@ -745,6 +928,4 @@ if __name__ == "__main__":
         dataset,
         device,
         SAVE_DIR,
-        conf_thresh=CONF_THRESH,
-        iou_thresh=IOU_THRESH,
     )
