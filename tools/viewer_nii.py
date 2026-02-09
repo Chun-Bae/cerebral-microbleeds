@@ -9,8 +9,8 @@ import numpy as np
 import nibabel as nib
 import napari
 
-SWI_DIR = r".\data\samsung_data\swi"
-ROI_DIR = r".\data\samsung_data\roi"
+SWI_DIR = "data/samsung_data/swi"
+ROI_DIR = "data/samsung_data/roi"
 
 def load_case(case_id: str):
     swi_path = os.path.join(SWI_DIR, f"{case_id}.nii")

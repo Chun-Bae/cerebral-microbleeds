@@ -139,6 +139,7 @@ class SSDHead(nn.Module):
         # print(f"SSDHead Output Shapes - locs : {locs.shape}, scores: {scores.shape}")
         return locs, scores
 
+
 # 최종 SSD-FE 모델
 # SSD-512 + FE
 class SSD_FE(nn.Module):

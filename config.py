@@ -37,5 +37,5 @@ TRAIN_IOU_THRESH = 0.35  # Keep strict for high-quality learning
 
 # === Evaluation Params ===
 CONF_THRESH = 0.1
-TEST_IOU_THRESH = 0.001  # Very loose for CMB detection (1px overlap ok)
-NMS_THRESH = 0.4
+TEST_IOU_THRESH = 0.1  # Very loose for CMB detection (1px overlap ok)
+NMS_THRESH = 0.1  # Aggressive NMS to remove duplicates (was 0.4)

@@ -38,3 +38,28 @@
 ## 4. 결론 (Conclusion)
 * 평가 지표(Metric)를 수정함으로써 시각적 확인 결과와 수치적 성능이 일치하게 됨.
 * 초소형 객체 탐지에서는 일반적인 Object Detection 지표(IoU 0.5 등)를 그대로 적용하면 왜곡이 발생하므로, 도메인 특성에 맞는 지표 설계가 필수적임.
+
+## 5. 최종 검증 결과 (Validation Result)
+
+**Date**: 2026-02-04 00:57
+**Dataset**: Hold-out Test Set (Patient-wise Split)
+**Epoch**: 21 (Early Stage)
+
+지표 개선 및 파라미터 튜닝 적용 후, 21 에폭만에 매우 우수한 성능을 달성함.
+특히 기존에 낮았던 **Recall(0.1 → 0.88)**과 **Precision(0.2 → 0.95)**이 압도적으로 향상되어, 실제 임상 적용 가능한 수준의 탐지 능력을 보여줌.
+
+### 🏆 Performance Metrics
+* **Precision**: 0.9553 (오탐 거의 없음)
+* **Recall**: 0.8820 (미탐 크게 감소)
+* **F1-Score**: 0.9172
+* **AP@0.001**: 0.8624
+
+### ⚙️ Final Hyperparameters & Loss Config
+* **Evaluation**:
+    * `CONF_THRESH`: **0.1** (낮은 확신도도 포함)
+    * `TEST_IOU_THRESH`: **0.001** (1px 겹침도 인정 - 소형 객체 특화)
+    * `NMS_THRESH`: **0.1** (중복 박스 강력 제거)
+* **Loss Function**:
+    * **Classification**: **Focal Loss** (`alpha=0.99`, `gamma=2.0`) - Class Imbalance 해결
+    * **Localization**: **CIoU Loss** - 중심점 거리 및 종횡비까지 고려한 정밀한 위치 학습
+    * **Hard Negative Mining**: Ratio 3:1 적용

@@ -370,38 +370,35 @@ def compute_ap(all_preds, all_gts):
 
 def plot_froc(fps_per_image, sensitivities, save_path):
     """
-    FROC 곡선 그리기
-
-    Args:
-        fps_per_image: 이미지당 FP 개수 리스트
-        sensitivities: 해당 시점의 sensitivity 리스트
-        save_path: 저장 경로
+    FROC 곡선 그리기 (Style matched to user reference)
     """
     plt.figure(figsize=(8, 6))
-    plt.plot(fps_per_image, sensitivities, "b-", linewidth=2)
-    plt.xlabel("Average False Positives per Image", fontsize=12)
-    plt.ylabel("Sensitivity (Recall)", fontsize=12)
-    plt.title("FROC Curve", fontsize=14)
-    plt.xlim([0, max(fps_per_image) + 0.5])
-    plt.ylim([0, 1.05])
-    plt.grid(True, alpha=0.3)
 
-    # 주요 FP 지점에서 sensitivity 표시
-    key_fps = [0.5, 1, 2, 4, 8]
-    for fp in key_fps:
-        if fp <= max(fps_per_image):
-            # 보간으로 해당 FP에서의 sensitivity 찾기
-            idx = np.searchsorted(fps_per_image, fp)
-            if idx < len(sensitivities):
-                sens = sensitivities[idx]
-                plt.scatter([fp], [sens], s=50, zorder=5)
-                plt.annotate(
-                    f"{sens:.2f}",
-                    (fp, sens),
-                    textcoords="offset points",
-                    xytext=(5, 5),
-                    fontsize=9,
-                )
+    # User style: Line with markers, legend
+    plt.plot(
+        fps_per_image,
+        sensitivities,
+        "o-",
+        linewidth=1.5,
+        markersize=4,
+        label="test FROC Curve",
+    )
+
+    plt.xlabel("Average False Positives per Image", fontsize=12)
+    plt.ylabel(
+        "True Positive Rate (Sensitivity)", fontsize=12
+    )  # Label matched to image y-axis
+    plt.title(
+        "FROC Curve (test) - CMB Detection", fontsize=14
+    )  # Title matched to image
+
+    # Axis limits considering the data spread
+    if len(fps_per_image) > 0:
+        plt.xlim([0, max(fps_per_image) * 1.05])
+    plt.ylim([0, 1.05])
+
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc="lower right")
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
@@ -409,11 +406,9 @@ def plot_froc(fps_per_image, sensitivities, save_path):
     print(f"✅ FROC 곡선 저장: {save_path}")
 
 
-def plot_confusion_matrix(tp, fp, fn, save_path):
+def plot_confusion_matrix_bar(tp, fp, fn, save_path):
     """
-    Confusion Matrix 그리기 (Object Detection용)
-
-    Note: TN은 object detection에서 정의하기 어려움
+    Confusion Matrix 그리기 (Bar Chart 형태 - 기존 유지)
     """
     fig, ax = plt.subplots(figsize=(6, 5))
 
@@ -443,7 +438,7 @@ def plot_confusion_matrix(tp, fp, fn, save_path):
         )
 
     ax.set_ylabel("Count", fontsize=12)
-    ax.set_title("Detection Results", fontsize=14)
+    ax.set_title("Detection Results Help", fontsize=14)
 
     # Precision, Recall 표시
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
@@ -467,7 +462,68 @@ def plot_confusion_matrix(tp, fp, fn, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.close()
-    print(f"✅ Confusion Matrix 저장: {save_path}")
+    print(f"✅ Confusion Matrix (Bar) 저장: {save_path}")
+
+
+def plot_confusion_matrix_heatmap(tp, fp, fn, save_path):
+    """
+    2x2 Confusion Matrix 그리기 (Heatmap 형태)
+    Object Detection에서는 TN을 정의할 수 없으므로 N/A로 표시
+    """
+    # 2x2 행렬 데이터: [[TP, FN], [FP, TN=0]]
+    # Row: True Class (Positive, Negative)
+    # Col: Pred Class (Positive, Negative)
+    cm_data = np.array([[tp, fn], [fp, 0]])
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    # 0인 TN 부분을 제외하고 색상 매핑을 위해 마스킹하거나 그냥 그림
+    # TN이 0이지만 여기서는 의미없는 0이므로 색상에서 제외하고 싶을 수 있으나,
+    # 간단하게 전체를 그린다.
+    im = ax.imshow(cm_data, interpolation="nearest", cmap="Blues")
+
+    # 컬러바
+    ax.figure.colorbar(im, ax=ax)
+
+    # 축 라벨 설정
+    classes_x = ["Predicted CMB", "Predicted Background"]
+    classes_y = ["Actual CMB", "Actual Background"]
+
+    ax.set(
+        xticks=np.arange(cm_data.shape[1]),
+        yticks=np.arange(cm_data.shape[0]),
+        xticklabels=classes_x,
+        yticklabels=classes_y,
+        title="Confusion Matrix (2x2)",
+        ylabel="True Label",
+        xlabel="Predicted Label",
+    )
+
+    # 텍스트 주석
+    thresh = cm_data.max() / 2.0
+    for i in range(cm_data.shape[0]):
+        for j in range(cm_data.shape[1]):
+            # 값 텍스트
+            if i == 1 and j == 1:
+                val_text = "N/A"  # TN 위치
+            else:
+                val_text = f"{cm_data[i, j]}"
+
+            ax.text(
+                j,
+                i,
+                val_text,
+                ha="center",
+                va="center",
+                color="white" if cm_data[i, j] > thresh else "black",
+                fontsize=14,
+                fontweight="bold",
+            )
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"✅ Confusion Matrix (Heatmap) 저장: {save_path}")
 
 
 def compute_froc_data(all_preds, all_gts, num_images):
@@ -507,7 +563,7 @@ def compute_froc_data(all_preds, all_gts, num_images):
                 iou = jaccard(gt_box.unsqueeze(0), box.unsqueeze(0))[0, 0].item()
                 if iou >= config.TEST_IOU_THRESH:
                     is_tp = True
-                    matched_gt.add(gt_idx)
+                    matched[img_id].add(gt_idx)
                     break
 
         if is_tp:
@@ -704,22 +760,25 @@ def evaluate(model, testloader, dataset, device, save_dir):
                 )
 
                 # 파일명 결정
-                if hasattr(dataset, "idx_to_name") and img_id in dataset.idx_to_name:
-                    filename = dataset.idx_to_name[img_id]
-                else:
-                    filename = f"img_{img_id:05d}.png"
+                # [Fix] 병변이 있거나(GT) 예측된 병변이 있는 경우만 저장
+                if len(gt_boxes) > 0 or len(pred_boxes) > 0:
+                    filename = (
+                        dataset.idx_to_name[img_id]
+                        if hasattr(dataset, "idx_to_name")
+                        else f"img_{img_id:05d}.png"
+                    )
+                    save_path = os.path.join(vis_dir, filename)
 
-                save_path = os.path.join(vis_dir, filename)
-                visualize_predictions(
-                    img_np,
-                    gt_np,
-                    pred_np,
-                    pred_s_np,
-                    save_path,
-                    ignored_boxes=ign_boxes_np,
-                    ignored_scores=ign_scores_np,
-                )
-                vis_count += 1
+                    visualize_predictions(
+                        img_np,
+                        gt_np,
+                        pred_np,
+                        pred_s_np,
+                        save_path,
+                        ignored_boxes=ign_boxes_np,
+                        ignored_scores=ign_scores_np,
+                    )
+                    vis_count += 1
 
                 img_id += 1
 
@@ -776,15 +835,24 @@ def evaluate(model, testloader, dataset, device, save_dir):
         )
 
     # 7. Confusion Matrix 플롯
-    plot_confusion_matrix(
+    # (1) 기존 Bar Chart
+    plot_confusion_matrix_bar(
+        total_tp, total_fp, total_fn, os.path.join(save_dir, "confusion_matrix_bar.png")
+    )
+    # (2) 2x2 Heatmap
+    plot_confusion_matrix_heatmap(
         total_tp, total_fp, total_fn, os.path.join(save_dir, "confusion_matrix.png")
     )
 
     # 8. 결과 저장
+    total_gt_count = total_tp + total_fn
+    fp_per_cbm = total_fp / total_gt_count if total_gt_count > 0 else 0.0
+
     results = {
         "TP": total_tp,
         "FP": total_fp,
         "FN": total_fn,
+        "FP/CBM": fp_per_cbm,
         "Precision": precision,
         "Recall": recall,
         "F1": f1,
@@ -834,7 +902,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        default="weights/latest_ssd_fold_0.pth",
+        default="weights/00009(latest_ssd_fold_0_200).pth",
         help="Path to model weights",
     )
     parser.add_argument(
@@ -869,7 +937,7 @@ if __name__ == "__main__":
 
     print(f"Evaluation Config:")
     print(f"  CONF_THRESH: {config.CONF_THRESH}")
-    print(f"  IOU_THRESH:  {config.IOU_THRESH}")
+    print(f"  IOU_THRESH:  {config.TEST_IOU_THRESH}")
     print(f"  NMS_THRESH:  {config.NMS_THRESH}")
 
     # 모델 로드

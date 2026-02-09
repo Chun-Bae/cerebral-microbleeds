@@ -332,11 +332,44 @@ def main():
     pretrained_weights = select_pretrained_weights()
 
     # 3. K-Fold 학습
+    # 3. K-Fold 학습
     print("\n[Step 3] K-Fold 학습 시작...")
     fold_results = []
 
+    # 정규식 사용을 위해 import (함수 내부 import 혹은 상단 이동 권장, 여기서는 편의상 상단에 추가되었다고 가정하거나 지역적으로 사용)
+    import re
+
     for fold_idx in range(config.K_FOLDS):
-        fold_dir = train_fold(fold_idx, result_dir, pretrained_weights)
+        current_fold_weights = pretrained_weights
+
+        # 사용자가 가중치를 선택했고, 파일명에 'fold_X' 패턴이 있다면 해당 fold에 맞는 파일로 교체 시도
+        if pretrained_weights:
+            filename = os.path.basename(pretrained_weights)
+            dirname = os.path.dirname(pretrained_weights)
+
+            # "fold_숫자" 패턴 감지 (예: latest_ssd_fold_0.pth)
+            pattern = r"(fold_)(\d+)"
+            match = re.search(pattern, filename)
+
+            if match:
+                # 현재 fold_idx로 숫자를 치환
+                new_filename = re.sub(pattern, f"\\g<1>{fold_idx}", filename)
+                candidate_path = os.path.join(dirname, new_filename)
+
+                if os.path.exists(candidate_path):
+                    current_fold_weights = candidate_path
+                    print(f"  🔄 Fold {fold_idx}용 가중치 자동 선택: {new_filename}")
+                else:
+                    # 해당 fold의 가중치 파일이 없으면, 다른 fold의 가중치를 쓰지 않고 초기화 상태로 학습
+                    print(
+                        f"  ⚠️ Fold {fold_idx}용 가중치 파일({new_filename})이 없어 처음부터 학습합니다."
+                    )
+                    current_fold_weights = None
+            else:
+                # fold 특정 패턴이 없는 일반 가중치(예: vgg_backbone.pth)는 그대로 사용
+                pass
+
+        fold_dir = train_fold(fold_idx, result_dir, current_fold_weights)
         fold_results.append(fold_dir)
 
     # 4. 학습 완료 요약

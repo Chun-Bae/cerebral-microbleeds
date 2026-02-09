@@ -60,6 +60,7 @@ def create_lmdb(patient_ids, swi_dir, roi_dir, lmdb_path):
             # 00000_name: "VK001_slice_0.png"
             txn.put(f"{str_idx}_name".encode(), filename.encode())
 
+
         # 메타 데이터
         txn.put("length".encode(), str(len(valid_files)).encode())
 
