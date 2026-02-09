@@ -146,13 +146,17 @@ def train_one_epoch(
             cv2.imwrite("data/aug_bbox_valid/augmented_sample.png", viz_img)
         # -----------------------------------------------------
 
+        # 정규화 전 이미지 저장 (FE Layer용)
+        batch_img_raw = batch_img.clone()
         batch_img = normalize_16bit(batch_img)
 
         # 2. forward (AMP autocast)
         with torch.amp.autocast("cuda"):
             # model returns 3 items
-            # forward(x, gt_mask)
-            pred_locs, pred_scores, anchors = model(batch_img, batch_lesion_mask)
+            # forward(x, input_image, bboxes_list) - 학습 시 FE 적용
+            pred_locs, pred_scores, anchors = model(
+                batch_img, batch_img_raw, batch_bboxes
+            )
 
             # 3. GT 준비 (bboxes and label)
             # Anchor 별 매칭
@@ -227,7 +231,7 @@ def train_one_epoch(
                 # 앵커 고정 (Top-5 IoU 앵커 선택)
                 with torch.no_grad():
                     # Note: We pass only image because we just need anchors.
-                    # forward(x, gt_mask=None) -> returns 3 values now
+                    # forward(x, input_image=None, bboxes_list=None) -> 테스트 모드
                     _, _, anchors_temp = model(batch_img[0:1])
 
                 gt_box = batch_bboxes[0].to(device)
@@ -354,10 +358,8 @@ def validate(model, val_loader, criterion, device):
             batch_img = normalize_16bit(batch_img)
 
             # 2. forward
-            # Validate -> No GT Mask (zeros) if not available, or use batch_lesion_mask if needed for consistent metric?
-            # Model logic handles None -> Zero mask. But wait, model forward logic handles gt_mask=None.
-            # Passing None to simulate inference mode (no enhancement from GT)
-            pred_locs, pred_scores, anchors = model(batch_img, gt_mask=None)
+            # Validation에서는 FE 적용 안 함 (테스트 모드)
+            pred_locs, pred_scores, anchors = model(batch_img)
 
             # 3. GT
             gt_labels = [

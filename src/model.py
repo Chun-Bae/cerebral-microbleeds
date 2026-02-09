@@ -53,22 +53,105 @@ class VGG16(nn.Module):
         return f1, f2, f3
 
 
-# Feature Enhancement Layer 추가
+# Feature Enhancement Layer 추가 (논문 공식 적용)
+# 1. Ground-truth Mask 생성: BBox 내부 픽셀만 유지
+# 2. B_mean = β × mean(B_area), β = 1.5
+# 3. M(i,j) = 1 - M(i,j) / B_mean (어두울수록 강하게 강화)
+# 4. X_l+1 = X_l + M * X_l
 class FELayer(nn.Module):
-    def __init__(self):
+    def __init__(self, beta=1.5):
         super(FELayer, self).__init__()
+        self.beta = beta
 
-    def forward(self, feature_map, gt_mask):
-        # GT Mask를 Feature Map 크기로 다운샘플링 (Bilinear Interpolation 사용)
-        resized_gt_mask = F.interpolate(
-            gt_mask,
-            size=feature_map.shape[2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+    def forward(self, feature_map, input_image, bboxes_list):
+        """
+        Args:
+            feature_map: (B, C, H_f, W_f) - conv4_3 특징 맵
+            input_image: (B, C, H, W) - 원본 입력 이미지 (정규화 전)
+            bboxes_list: List of (N_i, 4) tensors - 각 샘플의 정규화된 bbox [cx, cy, w, h]
+        Returns:
+            enhanced_map: (B, C, H_f, W_f) - 강화된 특징 맵
+        """
+        B, C, H_f, W_f = feature_map.shape
+        _, _, H, W = input_image.shape
+        device = feature_map.device
 
-        # Ground-Truth 정보 기반으로 특징 강화
-        enhanced_map = feature_map * (1 + resized_gt_mask)
+        # 마스크 생성은 gradient 계산에서 완전히 분리
+        with torch.no_grad():
+            # 전체 마스크 초기화
+            enhanced_mask = torch.zeros((B, 1, H_f, W_f), device=device)
+
+            for b in range(B):
+                bboxes = bboxes_list[b]  # (N, 4) - [cx, cy, w, h] 정규화 좌표
+                if len(bboxes) == 0:
+                    continue
+
+                bboxes = bboxes.to(device)
+                img = input_image[b]  # (C, H, W)
+
+                # 각 bbox에 대해 마스크 생성 및 강화값 계산
+                for bbox in bboxes:
+                    cx, cy, w, h = bbox.tolist()
+
+                    # 픽셀 좌표로 변환
+                    x1 = int((cx - w / 2) * W)
+                    y1 = int((cy - h / 2) * H)
+                    x2 = int((cx + w / 2) * W)
+                    y2 = int((cy + h / 2) * H)
+
+                    # 경계 클리핑
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2, y2 = min(W, x2), min(H, y2)
+
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+
+                    # 1. BBox 영역의 픽셀 평균 (input_image에서 계산)
+                    bbox_region_mean = img[:, y1:y2, x1:x2].mean().item()
+
+                    # 2. B_mean 계산
+                    B_mean = self.beta * bbox_region_mean
+
+                    # Division by zero 방지
+                    if B_mean < 1e-6:
+                        B_mean = 1e-6
+
+                    # 3. Feature map 크기로 변환된 bbox 좌표
+                    x1_f = int((cx - w / 2) * W_f)
+                    y1_f = int((cy - h / 2) * H_f)
+                    x2_f = int((cx + w / 2) * W_f)
+                    y2_f = int((cy + h / 2) * H_f)
+
+                    x1_f, y1_f = max(0, x1_f), max(0, y1_f)
+                    x2_f, y2_f = min(W_f, x2_f), min(H_f, y2_f)
+
+                    if x2_f <= x1_f or y2_f <= y1_f:
+                        continue
+
+                    # 4. Input image에서 해당 영역의 값으로 마스크 계산
+                    img_region = img[:, y1:y2, x1:x2].mean(dim=0)  # (H_r, W_r)
+
+                    # feature map 크기에 맞게 resize
+                    region_h, region_w = y2_f - y1_f, x2_f - x1_f
+                    if region_h > 0 and region_w > 0:
+                        img_region_resized = F.interpolate(
+                            img_region.unsqueeze(0).unsqueeze(0),
+                            size=(region_h, region_w),
+                            mode="bilinear",
+                            align_corners=False,
+                        ).view(region_h, region_w)  # squeeze() 대신 view() 사용
+
+                        # 5. 정규화 및 보수 계산: M = 1 - pixel_value / B_mean
+                        mask_values = (1.0 - (img_region_resized / B_mean)).clamp(0, 1)
+
+                        # 6. 강화 마스크에 max 적용
+                        enhanced_mask[b, 0, y1_f:y2_f, x1_f:x2_f] = torch.maximum(
+                            enhanced_mask[b, 0, y1_f:y2_f, x1_f:x2_f], mask_values
+                        )
+
+        # 7. 최종 특징 강화: X_l+1 = X_l * (1 + M)
+        # enhanced_mask는 no_grad로 생성되었으므로 gradient가 feature_map으로만 흐름
+        enhanced_map = feature_map * (1.0 + enhanced_mask)
 
         return enhanced_map
 
@@ -179,24 +262,24 @@ class SSD_FE(nn.Module):
         self.head2 = SSDHead(512, self.num_anchors, num_classes)
         self.head3 = SSDHead(512, self.num_anchors, num_classes)
 
-    def forward(self, x, gt_mask=None):
+    def forward(self, x, input_image=None, bboxes_list=None):
+        """
+        Args:
+            x: (B, C, H, W) - 정규화된 입력 이미지
+            input_image: (B, C, H, W) - 정규화 전 원본 이미지 (학습 시 FE용)
+            bboxes_list: List of (N_i, 4) tensors - Ground-truth BBox (학습 시 FE용)
+        """
         # 0. Input Adapter
-        x = self.input_adapter(x)
+        adapted_x = self.input_adapter(x)
 
         # 1. 백본
-        f1, f2, f3 = self.backbone(x)
+        f1, f2, f3 = self.backbone(adapted_x)
 
-        # 2. Feature Enhancement
-        # 학습 시에는 GT Mask 사용, 추론 시에는 Zero Mask (Enhancement Off)
-        # Train-Test Mismatch가 있지만, 사용자가 요청한 "Mask 없는 방식"으로 복원
-        if gt_mask is None:
-            # 배치 사이즈와 장치에 맞는 빈 마스크 생성
-            B, _, H, W = x.shape
-            gt_mask = torch.zeros((B, 1, H, W), device=x.device)
-
-        f1 = self.fe(f1, gt_mask)
-        f2 = self.fe(f2, gt_mask)
-        f3 = self.fe(f3, gt_mask)
+        # 2. Feature Enhancement (conv4_3 = f2에만 적용)
+        # 학습 시에만 적용 (bboxes_list가 있을 때)
+        # 테스트 시에는 bboxes_list=None → FE 적용 안 함
+        if bboxes_list is not None and input_image is not None:
+            f2 = self.fe(f2, input_image, bboxes_list)
 
         # 3. Detection Head
         loc1, cls1 = self.head1(f1)
@@ -234,15 +317,15 @@ if __name__ == "__main__":
     # 2. 모델 파일 용량 (MB 단위)
     param_size_mb = total_params * 4 / (1024**2)  # float32는 4바이트
 
-    # 3. 더미 입력 및 실행
+    # 3. 더미 입력 및 실행 (테스트 모드 - FE 적용 안 함)
     x = torch.randn(2, 3, 512, 512).to(device)
-    mask = torch.zeros(2, 1, 512, 512).to(device)
 
     # 메모리 측정 시작 (CUDA 전용)
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    locs, scores, anchors = model(x, mask)
+    # 테스트 모드: input_image=None, bboxes_list=None
+    locs, scores, anchors = model(x)
 
     # 4. 출력 결과
     print(f"Device: {device}")
