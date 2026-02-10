@@ -60,7 +60,6 @@ def create_lmdb(patient_ids, swi_dir, roi_dir, lmdb_path):
             # 00000_name: "VK001_slice_0.png"
             txn.put(f"{str_idx}_name".encode(), filename.encode())
 
-
         # 메타 데이터
         txn.put("length".encode(), str(len(valid_files)).encode())
 
@@ -77,7 +76,9 @@ def load_patient_ids(txt_path):
 
 
 def main():
-    for fold_idx in range(K):
+    folds_to_process = range(K) if config.USE_K_FOLD else range(1)
+
+    for fold_idx in folds_to_process:
         fold_dir = os.path.join(SPLITS_DIR, f"fold_{fold_idx}")
 
         train_ids = load_patient_ids(os.path.join(fold_dir, "train.txt"))
@@ -104,9 +105,10 @@ def main():
         holdout_ids = load_patient_ids(holdout_path)
         print(f"\n=== Hold-out Test ===")
         print(f"Hold-out 환자 수: {len(holdout_ids)}")
-        create_lmdb(
-            holdout_ids, SWI_DIR, ROI_DIR, os.path.join(LMDB_DIR, "holdout_test.lmdb")
-        )
+
+        # main.py에서 expecting하는 경로: lmdb/holdout/test.lmdb
+        holdout_lmdb_path = os.path.join(LMDB_DIR, "holdout", "test.lmdb")
+        create_lmdb(holdout_ids, SWI_DIR, ROI_DIR, holdout_lmdb_path)
 
 
 if __name__ == "__main__":

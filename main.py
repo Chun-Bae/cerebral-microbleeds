@@ -160,8 +160,6 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
     criterion = MultiBoxLoss(
         num_classes=2,
         iou_threshold=config.TRAIN_IOU_THRESH,
-        alpha=config.ALPHA,
-        gamma=config.GAMMA,
         neg_pos_ratio=config.NEG_POS_RATIO,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
@@ -261,8 +259,6 @@ def evaluate_holdout(fold_results, result_dir):
     criterion = MultiBoxLoss(
         num_classes=2,
         iou_threshold=config.IOU_THRESH,
-        alpha=config.ALPHA,
-        gamma=config.GAMMA,
         neg_pos_ratio=config.NEG_POS_RATIO,
     )
 
@@ -326,7 +322,16 @@ def main():
     parser.add_argument(
         "--fold", type=int, default=None, help="Specific fold to train (0-indexed)"
     )
+    parser.add_argument(
+        "--fixed_split",
+        action="store_true",
+        help="Use fixed split (Train/Val/Test) instead of K-Fold",
+    )
     args = parser.parse_args()
+
+    if args.fixed_split:
+        config.USE_K_FOLD = False
+        print("🔧 Configuration override: Fixed Split Mode ON")
 
     run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
     result_dir = os.path.join(config.RESULTS_DIR, f"train_{run_timestamp}")
@@ -355,15 +360,20 @@ def main():
 
     # 3. K-Fold 학습
     # 3. K-Fold 학습
-    print("\n[Step 3] K-Fold 학습 시작...")
+    print(
+        "\n[Step 3] K-Fold 학습 시작..."
+        if config.USE_K_FOLD
+        else "\n[Step 3] 학습 시작 (Fixed Split)..."
+    )
     fold_results = []
 
     # 정규식 사용을 위해 import (함수 내부 import 혹은 상단 이동 권장, 여기서는 편의상 상단에 추가되었다고 가정하거나 지역적으로 사용)
     import re
 
-    folds_to_run = range(config.K_FOLDS)
     if args.fold is not None:
         folds_to_run = [args.fold]
+    else:
+        folds_to_run = range(config.K_FOLDS) if config.USE_K_FOLD else range(1)
 
     for fold_idx in folds_to_run:
         current_fold_weights = pretrained_weights

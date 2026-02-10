@@ -87,16 +87,6 @@ class CMBsDatasetLMDB(Dataset):
 
         # Copy-Paste를 위한 병변 인덱스 뱅크
         self.is_train = is_train
-        self.lesion_indices = []
-        if self.is_train:
-            for name, boxes in self.bboxes_dict.items():
-                if len(boxes) > 0:
-                    idx = self.name_to_idx.get(name)
-                    if idx is not None:
-                        self.lesion_indices.append(idx)
-            print(
-                f"🏥 Lesion Bank 구축 완료: {len(self.lesion_indices)}개 샘플 (Copy-Paste 준비됨)"
-            )
 
     def _init_db(self):
         """
@@ -124,21 +114,7 @@ class CMBsDatasetLMDB(Dataset):
 
         curr_name = self.idx_to_name[idx]
 
-        # 1. 인접 슬라이스 찾기 (파일명 파싱)
-        # VK001_slice_0.png
-        try:
-            pid, s_rest = curr_name.split("_slice_")
-            s_num = int(s_rest.replace(".png", ""))
-            prev_name = f"{pid}_slice_{s_num - 1}.png"
-            next_name = f"{pid}_slice_{s_num + 1}.png"
-        except Exception:
-            # 포맷 예외 시 복제
-            prev_name = curr_name
-            next_name = curr_name
-
-        prev_idx = self.name_to_idx.get(prev_name)
-        next_idx = self.name_to_idx.get(next_name)
-
+        # 1. 2.5D Logic Removed -> Single Slice duplicated to 3 channels
         with self.env.begin(write=False) as txn:
             # Helper function
             def load_img_tensor(target_idx):
@@ -158,22 +134,14 @@ class CMBsDatasetLMDB(Dataset):
             if curr_tensor is None:
                 raise RuntimeError(f"LMDB 읽기 실패: index {idx}")
 
-            prev_tensor = load_img_tensor(prev_idx)
-            next_tensor = load_img_tensor(next_idx)
-
-            # 경계 처리 (없으면 현재 슬라이스 복제)
-            if prev_tensor is None:
-                prev_tensor = curr_tensor.clone()
-            if next_tensor is None:
-                next_tensor = curr_tensor.clone()
+            # 3채널 복사 (Grayscale -> RGB imitation)
+            swi_tensor = curr_tensor.repeat(3, 1, 1)
 
             # 마스크 로드 (현재 슬라이스 기준)
             str_idx = f"{idx:05d}"
             roi_bytes = txn.get(f"{str_idx}_mask".encode())
             roi_arr = np.frombuffer(roi_bytes, dtype=np.uint8)
             roi_mask = cv2.imdecode(roi_arr, cv2.IMREAD_UNCHANGED)  # (H, W)
-
-            swi_tensor = torch.cat([prev_tensor, curr_tensor, next_tensor], dim=0)
 
         # ROI Mask Tensor 변환 (H, W) -> (1, H, W)
         roi_mask_tensor = torch.from_numpy(roi_mask.astype(np.float32)).unsqueeze(0)
@@ -185,142 +153,6 @@ class CMBsDatasetLMDB(Dataset):
         bboxes_list = self.bboxes_dict.get(filename, [])
         # deep copy to avoid modifying original list during augmentation
         bboxes_list = [list(box) for box in bboxes_list]
-
-        # [Copy-Paste Augmentation]
-        # 병변을 오려내어 현재 이미지의 빈 공간(뇌 영역)에 붙여넣기
-        if self.is_train and len(self.lesion_indices) > 0 and np.random.rand() < 0.5:
-            # 1. Source 선택 (병변이 있는 다른 이미지)
-            src_idx = np.random.choice(self.lesion_indices)
-
-            # --- Source Data Loading (Target과 동일한 방식) ---
-            # LMDB 트랜잭션이 살아있으므로 그대로 읽음
-            # 단, 함수 중복을 피하기 위해 코드가 좀 길어짐 (리팩토링 권장)
-            src_name = self.idx_to_name[src_idx]
-            try:
-                pid, s_rest = src_name.split("_slice_")
-                s_num = int(s_rest.replace(".png", ""))
-                sp_name = f"{pid}_slice_{s_num - 1}.png"
-                sn_name = f"{pid}_slice_{s_num + 1}.png"
-            except:
-                sp_name = src_name
-                sn_name = src_name
-
-            sp_idx = self.name_to_idx.get(sp_name)
-            sn_idx = self.name_to_idx.get(sn_name)
-
-            with self.env.begin(write=False) as txn2:  # 중첩 트랜잭션 가능 (readonly)
-
-                def load_src_tensor(target_idx):
-                    if target_idx is None:
-                        return None
-                    str_idx = f"{target_idx:05d}"
-                    img_bytes = txn2.get(f"{str_idx}_image".encode())
-                    if img_bytes is None:
-                        return None
-                    arr = np.frombuffer(img_bytes, dtype=np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
-                    return torch.from_numpy(img.astype(np.float32)).unsqueeze(0)
-
-                s_curr = load_src_tensor(src_idx)
-                s_prev = load_src_tensor(sp_idx)
-                s_next = load_src_tensor(sn_idx)
-                if s_curr is not None:
-                    if s_prev is None:
-                        s_prev = s_curr.clone()
-                    if s_next is None:
-                        s_next = s_curr.clone()
-                    src_tensor = torch.cat([s_prev, s_curr, s_next], dim=0)  # (3, H, W)
-                else:
-                    src_tensor = None
-
-            # --- Copy & Paste ---
-            src_bboxes = self.bboxes_dict.get(src_name, [])
-
-            if src_tensor is not None and len(src_bboxes) > 0:
-                # 2. Source Box 중 하나 랜덤 선택
-                s_box = src_bboxes[
-                    np.random.randint(len(src_bboxes))
-                ]  # [cx, cy, w, h] (0~1)
-
-                H, W = swi_tensor.shape[1:]
-                scx, scy, sw, sh = s_box
-
-                # Patch 좌표 계산 (픽셀 단위)
-                # 약간 여유있게 자름 (1.2배)
-                pw, ph = int(sw * W * 1.2), int(sh * H * 1.2)
-                px1 = int((scx * W) - pw // 2)
-                py1 = int((scy * H) - ph // 2)
-
-                # 범위 체크
-                if (
-                    pw > 4
-                    and ph > 4
-                    and px1 >= 0
-                    and py1 >= 0
-                    and (px1 + pw) < W
-                    and (py1 + ph) < H
-                ):
-                    patch = src_tensor[
-                        :, py1 : py1 + ph, px1 : px1 + pw
-                    ].clone()  # (3, h, w)
-
-                    # 3. Target 위치 선정 (뇌 영역 내부)
-                    # 현재 이미지(중앙 슬라이스)에서 0이 아닌 픽셀 찾기
-                    brain_mask = (swi_tensor[1] > 10).nonzero(
-                        as_tuple=False
-                    )  # (N, 2) [y, x]
-
-                    if len(brain_mask) > 0:
-                        # 랜덤 좌표 선택 (여기가 새로운 중심점)
-                        rnd_idx = np.random.randint(len(brain_mask))
-                        ty, tx = brain_mask[rnd_idx]
-
-                        # 붙여넣을 좌표 (Top-Left)
-                        tx1 = int(tx - pw // 2)
-                        ty1 = int(ty - ph // 2)
-
-                        # 범위 체크
-                        if tx1 >= 0 and ty1 >= 0 and (tx1 + pw) < W and (ty1 + ph) < H:
-                            # 4. 합성 (Alpha Blending with Ellipse Mask)
-                            # 타원형 마스크 생성 (중심 1, 가장자리 0)
-                            Y, X = np.ogrid[:ph, :pw]
-                            center_y, center_x = ph / 2, pw / 2
-                            # 타원 방정식: ((x-cx)/a)^2 + ((y-cy)/b)^2 <= 1
-                            dist_from_center = ((X - center_x) ** 2) / (
-                                (pw / 2) ** 2
-                            ) + ((Y - center_y) ** 2) / ((ph / 2) ** 2)
-
-                            # Soft edge (Gaussian Blur 효과 흉내 - 거리 기반 감쇠)
-                            # dist가 1에 가까울수록(가장자리) 투명하게
-                            alpha_mask = np.clip(1.0 - dist_from_center, 0, 1)
-                            alpha_mask = (
-                                torch.from_numpy(alpha_mask)
-                                .float()
-                                .to(swi_tensor.device)
-                            )
-
-                            # 합성: Target = Source * alpha + Target * (1 - alpha)
-                            existing_area = swi_tensor[
-                                :, ty1 : ty1 + ph, tx1 : tx1 + pw
-                            ]
-                            blended_patch = patch * alpha_mask + existing_area * (
-                                1 - alpha_mask
-                            )
-
-                            swi_tensor[:, ty1 : ty1 + ph, tx1 : tx1 + pw] = (
-                                blended_patch
-                            )
-
-                            # 5. Label 추가
-                            # 새로운 cx, cy, w, h
-                            new_cx = float(tx) / W
-                            new_cy = float(ty) / H
-                            # 너비/높이는 원본 그대로 유지 (약간의 scaling 효과는 없음)
-                            new_w = float(pw) / W / 1.2  # 아까 1.2배 했으니 다시 원복
-                            new_h = float(ph) / H / 1.2
-
-                            bboxes_list.append([new_cx, new_cy, new_w, new_h])
-                            # print(f"✨ Copy-Paste Applied! New bbox: {new_cx:.2f}, {new_cy:.2f}")
 
         if len(bboxes_list) > 0:
             bboxes = torch.tensor(bboxes_list, dtype=torch.float32)
@@ -370,57 +202,3 @@ def collate_fn(batch):
     bboxes = [item[3] for item in batch]  # 리스트
 
     return images, lesion_masks, roi_masks, bboxes
-
-
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
-    # Transform 생성
-    train_transform, test_transform = get_transforms(device)
-    # Dataset 생성
-    train_dataset = CMBsDatasetLMDB(
-        lmdb_path="data/lmdb/fold_0/train.lmdb", bbox_json_path=BBOX_JSON_PATH
-    )
-    print(f"Train 데이터 개수: {len(train_dataset)}")
-    # DataLoader
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=32,
-        shuffle=True,
-        num_workers=2,
-        collate_fn=collate_fn,
-    )
-    # 배치 가져오기
-    batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes = next(
-        iter(train_loader)
-    )
-    print(f"\nBefore augmentation:")
-    print(
-        f"  Image shape: {batch_img.shape}, min: {batch_img.min():.1f}, max: {batch_img.max():.1f}"
-    )
-    print(f"  Lesion Mask shape: {batch_lesion_mask.shape}")
-    print(f"  ROI Mask shape:    {batch_roi_mask.shape}")
-    print(f"  BBox counts: {[len(b) for b in batch_bboxes]}")
-
-    # 첫 번째 샘플의 bbox 출력
-    if len(batch_bboxes[0]) > 0:
-        print(f"  First sample bboxes:\n{batch_bboxes[0]}")
-
-    # GPU로 이동 후 증강 적용
-    batch_img = batch_img.to(device)
-    batch_lesion_mask = batch_lesion_mask.to(device)
-    batch_roi_mask = batch_roi_mask.to(device)
-
-    # Transform (img, mask1, mask2)
-    aug_img, aug_lesion_mask, aug_roi_mask = train_transform(
-        batch_img, batch_lesion_mask, batch_roi_mask
-    )
-
-    # 정규화 적용
-    aug_img = normalize_16bit(aug_img)
-    print(f"\nAfter augmentation + normalize:")
-    print(
-        f"  Image shape: {aug_img.shape}, min: {aug_img.min():.2f}, max: {aug_img.max():.2f}"
-    )
-    print(f"  Lesion Mask shape: {aug_lesion_mask.shape}")
-    print(f"  ROI Mask shape:    {aug_roi_mask.shape}")

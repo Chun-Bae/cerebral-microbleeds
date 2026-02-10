@@ -175,28 +175,67 @@ def main():
         # normal_ids = ['VK001', 'VK002', 'VK003', 'VK004', ... , 'VK652']
         normal_ids = ids[:]
 
-    # hold-out test용 분리
-    dev_ids, holdout_test_ids = train_test_split(
-        normal_ids,
-        test_size=0.2,
-        random_state=SEED,
-        stratify=[strata[pid] for pid in normal_ids],
-    )
-    save_list(os.path.join(SAVE_DIR, "holdout_test.txt"), sorted(holdout_test_ids))
-    print(f"✔ Hold-out Test: {len(holdout_test_ids)}명")
+    # Stratified Split
+    if config.USE_K_FOLD:
+        print(f"🔄 Strategy: Stratified {config.K_FOLDS}-Fold Cross Validation")
+        # 1. Hold-out Test 분리 (Dev:Test = 8:2)
+        dev_ids, holdout_test_ids = train_test_split(
+            normal_ids,
+            test_size=0.2,
+            random_state=SEED,
+            stratify=[strata[pid] for pid in normal_ids],
+        )
+        save_list(os.path.join(SAVE_DIR, "holdout_test.txt"), sorted(holdout_test_ids))
+        print(f"✔ Hold-out Test: {len(holdout_test_ids)}명 (20%)")
 
-    normal_ids = dev_ids
+        # 2. K-Fold 분할
+        normal_ids = dev_ids
+        y = [strata[pid] for pid in normal_ids]
+        folds = stratified_kfold_indices(normal_ids, y, config.K_FOLDS, SEED)
 
-    # y = ['very low', 'none', ..., 'none']
-    y = [strata[pid] for pid in normal_ids]
+        # Fold 정보 저장
+        os.makedirs(SAVE_DIR, exist_ok=True)
+        save_folds_info(folds, normal_ids, SAVE_DIR, fixed_train)
 
-    # folds = [[4,2,..], [..], [..], [..], [..]]
-    folds = stratified_kfold_indices(normal_ids, y, K, SEED)
+    else:
+        print("🔄 Strategy: Fixed Split (Train/Test 7:3 -> Train/Valid 3:1)")
+        # 1. Total -> Train_Total(70%) / Real_Test(30%)
+        # Stratify 적용
+        y_total = [strata[pid] for pid in normal_ids]
+        train_total_ids, real_test_ids = train_test_split(
+            normal_ids,
+            test_size=0.3,
+            random_state=SEED,
+            stratify=y_total,
+        )
 
-    # fold 정보 저장
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    # fixed_train은 여기서 따로 저장
-    save_folds_info(folds, normal_ids, SAVE_DIR, fixed_train)
+        # Hold-out (=Real Test) 저장
+        # main.py에서 evaluate_holdout 호출 시 이 목록 사용
+        save_list(os.path.join(SAVE_DIR, "holdout_test.txt"), sorted(real_test_ids))
+        print(f"✔ Hold-out Test (Real Test): {len(real_test_ids)}명 (30%)")
+
+        # 2. Train_Total -> Train(75%) / Valid(25%)  (= 3:1)
+        y_train_total = [strata[pid] for pid in train_total_ids]
+        train_final_ids, valid_ids = train_test_split(
+            train_total_ids,
+            test_size=0.25,
+            random_state=SEED,
+            stratify=y_train_total,
+        )
+
+        # Extreme Case (fixed_train)은 무조건 Train에 포함
+        train_final_ids.extend(fixed_train)
+
+        # Fold 0 폴더에 저장
+        fold_0_dir = os.path.join(SAVE_DIR, "fold_0")
+        os.makedirs(fold_0_dir, exist_ok=True)
+
+        save_list(os.path.join(fold_0_dir, "train.txt"), sorted(train_final_ids))
+        save_list(os.path.join(fold_0_dir, "test.txt"), sorted(valid_ids))
+
+        print(f"✔ Fold 0 Generated:")
+        print(f"  Train: {len(train_final_ids)}명 (Includes Fixed Train)")
+        print(f"  Valid: {len(valid_ids)}명")
 
 
 if __name__ == "__main__":

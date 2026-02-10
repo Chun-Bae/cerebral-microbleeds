@@ -700,7 +700,8 @@ def evaluate(model, testloader, dataset, device, save_dir):
         pbar = tqdm(testloader, desc="평가+시각화")
         for batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes in pbar:
             batch_img = batch_img.to(device)
-            batch_img = normalize_16bit(batch_img).to(device)
+            # 정규화
+            batch_img = normalize_16bit(batch_img)
 
             # 1. 추론
             # model returns 3 items
@@ -816,17 +817,6 @@ def evaluate(model, testloader, dataset, device, save_dir):
 
     ap = calculate_ap(all_detections, all_gts, config.TEST_IOU_THRESH)
 
-    # 5-2. COCO Style mAP (0.5 ~ 0.95, step 0.05)
-    coco_thresholds = np.arange(0.5, 1.0, 0.05)
-    coco_aps = []
-
-    print("  📐 COCO Style mAP 계산 중 (0.5 ~ 0.95)...")
-    for thr in coco_thresholds:
-        val = calculate_ap(all_detections, all_gts, thr)
-        coco_aps.append(val)
-
-    mAP_coco = np.mean(coco_aps)
-
     # 6. FROC 데이터 계산 & 플롯
     fps_per_image, sensitivities = compute_froc_data(all_preds, all_gts, img_id)
     if len(fps_per_image) > 0:
@@ -857,9 +847,6 @@ def evaluate(model, testloader, dataset, device, save_dir):
         "Recall": recall,
         "F1": f1,
         f"AP@{config.TEST_IOU_THRESH} (Target)": ap,
-        "mAP@[.5:.95]": mAP_coco,
-        "AP@0.50": coco_aps[0],
-        "AP@0.75": coco_aps[5] if len(coco_aps) > 5 else 0,
     }
 
     # 로그 출력
