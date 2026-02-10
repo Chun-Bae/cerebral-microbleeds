@@ -138,8 +138,10 @@ def select_pretrained_weights():
             return None
 
 
-def train_fold(fold_idx, result_dir, pretrained_weights=None):
+def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None):
     """단일 Fold 학습"""
+    if target_epoch is None:
+        target_epoch = config.NUM_EPOCHS
     print(f"\n{'=' * 50}")
     print(f"  FOLD {fold_idx + 1} / {config.K_FOLDS}")
     print(f"{'=' * 50}")
@@ -206,7 +208,7 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None):
         optimizer=optimizer,
         criterion=criterion,
         device=config.DEVICE,
-        num_epochs=config.NUM_EPOCHS,
+        num_epochs=target_epoch,
         fold_idx=fold_idx,
         start_epoch=start_epoch,
         loss_history=loss_history,
@@ -308,8 +310,23 @@ def evaluate_holdout(fold_results, result_dir):
         print(f"  결과 저장: {result_dir}/holdout_results.txt")
 
 
+import argparse
+
+
 def main():
     multiprocessing.freeze_support()
+
+    parser = argparse.ArgumentParser(description="CMB Detection Training")
+    parser.add_argument(
+        "--epochs", type=int, default=None, help="Target epoch to train until"
+    )
+    parser.add_argument(
+        "--weights", type=str, default=None, help="Path to pretrained weights"
+    )
+    parser.add_argument(
+        "--fold", type=int, default=None, help="Specific fold to train (0-indexed)"
+    )
+    args = parser.parse_args()
 
     run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
     result_dir = os.path.join(config.RESULTS_DIR, f"train_{run_timestamp}")
@@ -319,17 +336,22 @@ def main():
     print(f"Results directory created at: {result_dir}")
 
     print(f"Device: {config.DEVICE}")
+    target_num_epochs = args.epochs if args.epochs is not None else config.NUM_EPOCHS
     print(
-        f"K-Fold: {config.K_FOLDS}, Epochs: {config.NUM_EPOCHS}, Batch: {config.BATCH_SIZE}, LR: {config.LEARNING_RATE}"
+        f"K-Fold: {config.K_FOLDS}, Epochs: {target_num_epochs}, Batch: {config.BATCH_SIZE}, LR: {config.LEARNING_RATE}"
     )
 
     # 2. 데이터 준비 (NIfTI → PNG)
     print("\n[Step 1] 데이터 준비...")
     prepare_data()
 
-    # 2.5 가중치 선택 (이어서 학습할지 결정)
-    print("\n[Step 2] 사전 학습 가중치 선택...")
-    pretrained_weights = select_pretrained_weights()
+    # 2.5 가중치 선택
+    if args.weights:
+        print(f"\n[Step 2] 지정된 가중치 사용: {args.weights}")
+        pretrained_weights = args.weights
+    else:
+        print("\n[Step 2] 사전 학습 가중치 선택...")
+        pretrained_weights = select_pretrained_weights()
 
     # 3. K-Fold 학습
     # 3. K-Fold 학습
@@ -339,7 +361,11 @@ def main():
     # 정규식 사용을 위해 import (함수 내부 import 혹은 상단 이동 권장, 여기서는 편의상 상단에 추가되었다고 가정하거나 지역적으로 사용)
     import re
 
-    for fold_idx in range(config.K_FOLDS):
+    folds_to_run = range(config.K_FOLDS)
+    if args.fold is not None:
+        folds_to_run = [args.fold]
+
+    for fold_idx in folds_to_run:
         current_fold_weights = pretrained_weights
 
         # 사용자가 가중치를 선택했고, 파일명에 'fold_X' 패턴이 있다면 해당 fold에 맞는 파일로 교체 시도
@@ -369,7 +395,9 @@ def main():
                 # fold 특정 패턴이 없는 일반 가중치(예: vgg_backbone.pth)는 그대로 사용
                 pass
 
-        fold_dir = train_fold(fold_idx, result_dir, current_fold_weights)
+        fold_dir = train_fold(
+            fold_idx, result_dir, current_fold_weights, target_epoch=target_num_epochs
+        )
         fold_results.append(fold_dir)
 
     # 4. 학습 완료 요약
