@@ -889,7 +889,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        default="weights/00009(latest_ssd_fold_0_200).pth",
+        default="weights/latest_ssd_fold_0.pth",
         help="Path to model weights",
     )
     parser.add_argument(

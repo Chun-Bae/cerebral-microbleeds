@@ -5,7 +5,7 @@ import sys
 import torch
 from torch.utils.data import DataLoader
 from src.utils import Logger
-from scripts.preprocess_data import convert_nii_folder_to_images
+from scripts.preprocess_data import convert_nii_folder_to_images, run_hdbet_processing
 from src.dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH
 from src.model import SSD_FE
 from train import train, validate
@@ -21,17 +21,34 @@ os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 
 
 def prepare_data():
+    # 0. HD-BET (뇌 추출)
+    print("🧠 [0/5] HD-BET Brain Extraction (SWI)...")
+    if not os.path.exists(config.SWI_BET_OUTPUT_DIR) or not os.listdir(
+        config.SWI_BET_OUTPUT_DIR
+    ):
+        run_hdbet_processing(config.SWI_INPUT_DIR, config.SWI_BET_OUTPUT_DIR)
+    else:
+        print(f"⏭️ 이미 HD-BET 결과 존재: {config.SWI_BET_OUTPUT_DIR}")
+
     # 1. NIfTI → PNG 변환
-    print("[1/4] NIfTI → PNG 변환...")
-    convert_nii_folder_to_images(config.SWI_INPUT_DIR, config.SWI_OUTPUT_DIR)
-    convert_nii_folder_to_images(config.ROI_INPUT_DIR, config.ROI_OUTPUT_DIR)
+    print("[1/5] NIfTI → PNG 변환...")
+    apply_n4 = getattr(config, "APPLY_N4_BIAS_CORRECTION", False)
+
+    # SWI: HD-BET 결과물 사용 + N4 적용
+    convert_nii_folder_to_images(
+        config.SWI_BET_OUTPUT_DIR, config.SWI_OUTPUT_DIR, apply_n4=apply_n4
+    )
+    # ROI: 원본 사용 + N4 미적용
+    convert_nii_folder_to_images(
+        config.ROI_INPUT_DIR, config.ROI_OUTPUT_DIR, apply_n4=False
+    )
 
     # 2. Stratified K-Fold + Hold-out 분할
-    print("[2/4] Stratified K-Fold 분할...")
+    print("[2/5] Stratified K-Fold 분할...")
     make_folds()
 
     # 3. Bounding Box 추출
-    print("[3/4] Bounding Box 추출...")
+    print("[3/5] Bounding Box 추출...")
     extract_bboxes_main()
 
     # 4. LMDB 생성
@@ -43,8 +60,13 @@ def prepare_data():
 
 def get_fold_loaders(fold_idx):
     """특정 fold의 Train/Val DataLoader 생성"""
-    train_lmdb = os.path.join(config.LMDB_DIR, f"fold_{fold_idx}", "train.lmdb")
-    val_lmdb = os.path.join(config.LMDB_DIR, f"fold_{fold_idx}", "test.lmdb")
+    if config.USE_K_FOLD:
+        train_lmdb = os.path.join(config.LMDB_DIR, f"fold_{fold_idx}", "train.lmdb")
+        val_lmdb = os.path.join(config.LMDB_DIR, f"fold_{fold_idx}", "test.lmdb")
+    else:
+        # Fixed split (Always fixed_split folder)
+        train_lmdb = os.path.join(config.LMDB_DIR, "fixed_split", "train.lmdb")
+        val_lmdb = os.path.join(config.LMDB_DIR, "fixed_split", "valid.lmdb")
 
     train_dataset = CMBsDatasetLMDB(train_lmdb, BBOX_JSON_PATH, is_train=True)
     val_dataset = CMBsDatasetLMDB(val_lmdb, BBOX_JSON_PATH, is_train=False)
@@ -143,11 +165,16 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
     if target_epoch is None:
         target_epoch = config.NUM_EPOCHS
     print(f"\n{'=' * 50}")
-    print(f"  FOLD {fold_idx + 1} / {config.K_FOLDS}")
+    if config.USE_K_FOLD:
+        print(f"  FOLD {fold_idx + 1} / {config.K_FOLDS}")
+        fold_dirname = f"fold_{fold_idx}"
+    else:
+        print(f"  FIXED SPLIT TRAINING")
+        fold_dirname = "fixed_split"
     print(f"{'=' * 50}")
 
     # 1. Fold별 결과 디렉토리
-    fold_result_dir = os.path.join(result_dir, f"fold_{fold_idx}")
+    fold_result_dir = os.path.join(result_dir, fold_dirname)
     os.makedirs(fold_result_dir, exist_ok=True)
 
     # 2. DataLoader 생성
@@ -217,12 +244,12 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
 
 def get_holdout_loader():
     """Hold-out Test Set DataLoader 생성"""
-    holdout_lmdb = os.path.join(config.LMDB_DIR, "holdout", "test.lmdb")
+    holdout_lmdb = os.path.join(config.LMDB_DIR, "fixed_split", "test.lmdb")
 
     # LMDB가 없으면 생성 필요
     if not os.path.exists(holdout_lmdb):
-        print(f"⚠️ Hold-out LMDB 없음: {holdout_lmdb}")
-        print("  create_lmdb.py에서 holdout LMDB를 먼저 생성하세요.")
+        print(f"⚠️ Test LMDB 없음: {holdout_lmdb}")
+        print("  create_lmdb.py에서 LMDB를 먼저 생성하세요.")
         return None
 
     holdout_dataset = CMBsDatasetLMDB(holdout_lmdb, BBOX_JSON_PATH)
@@ -418,7 +445,10 @@ def main():
     for i, fd in enumerate(fold_results):
         print(f"  Fold {i}: {fd}")
 
-    evaluate_holdout(fold_results, result_dir)
+    if not config.USE_K_FOLD:
+        evaluate_holdout(fold_results, result_dir)
+    else:
+        print("ℹ️ K-Fold 완료. (별도의 Hold-out 평가는 수행하지 않음)")
 
 
 if __name__ == "__main__":

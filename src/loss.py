@@ -30,7 +30,6 @@ class MultiBoxLoss(nn.Module):
                 grid = anchor_centers.view(1, num_anchors, 1, 2) * 2 - 1
                 grid = grid.expand(batch_size, -1, -1, -1)
 
-                # 흑백 이미지 3채널 복사 방식이므로 모든 채널이 동일함.
                 brain_masks = brain_masks[:, 0:1, :, :]
 
                 sampled_mask = F.grid_sample(brain_masks, grid, align_corners=False)
