@@ -6,7 +6,6 @@ import math
 import os
 import cv2
 import numpy as np
-from src.utils import jaccard, encode, decode
 from src.dataset import normalize_16bit, get_transforms
 
 torch.backends.cudnn.benchmark = True

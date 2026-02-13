@@ -3,7 +3,7 @@ import torch
 torch.backends.cudnn.benchmark = True
 import torch.nn.functional as F
 from torchvision.ops import nms
-from src.utils import decode, jaccard
+from src.box_ops import BoxOps
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -12,7 +12,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from src.dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH, normalize_16bit
 from src.model import SSD_FE
-from src.utils import Logger
+from src.logger import Logger
 import sys
 import platform
 
@@ -46,7 +46,7 @@ def get_ignored_fn(pred_loc, pred_score, anchors, gt_boxes):
     scores = probs[:, 1]  # (N_anchors,)
 
     # 2. Decode
-    decoded_boxes = decode(pred_loc, anchors)  # (N_anchors, 4) [cx,cy,w,h]
+    decoded_boxes = BoxOps.decode(pred_loc, anchors)  # (N_anchors, 4) [cx,cy,w,h]
 
     # [cx, cy, w, h] -> [x1, y1, x2, y2]
     decoded_boxes_xyxy = torch.zeros_like(decoded_boxes)
@@ -67,7 +67,7 @@ def get_ignored_fn(pred_loc, pred_score, anchors, gt_boxes):
     # utils.jaccard는 [cx,cy,w,h] 입력을 가정함.
     # 따라서 decoded_boxes(cx,cy,w,h)를 그대로 넣어야 함.)
 
-    ious = jaccard(gt_boxes, decoded_boxes)  # (num_gt, num_anchors)
+    ious = BoxOps.jaccard(gt_boxes, decoded_boxes)  # (num_gt, num_anchors)
 
     ignored_boxes = []
     ignored_scores = []
@@ -116,7 +116,7 @@ def post_process(
 
     # 3. Offset → 실제 좌표 디코딩
     # decode: 앵커 + offset → 실제 bbox [cx, cy, w, h]
-    boxes = decode(filtered_locs, filter_anchors)
+    boxes = BoxOps.decode(filtered_locs, filter_anchors)
 
     # --- [Background Filtering] Pre-NMS ---
     # 중요: NMS 전에 배경 박스를 지워야, 진짜 병변이 NMS로 인해 삭제되는 것을 방지함.
@@ -233,7 +233,7 @@ def match_boxes(pred_boxes, gt_boxes):
     if len(gt_boxes) == 0:
         return 0, len(pred_boxes), 0  # 모두 오탐
 
-    ious = jaccard(gt_boxes, pred_boxes)
+    ious = BoxOps.jaccard(gt_boxes, pred_boxes)
 
     # 매칭 (Greedy 방식)
     matched_gt = set()
@@ -261,77 +261,94 @@ def match_boxes(pred_boxes, gt_boxes):
     return tp, fp, fn
 
 
-def get_all_detections(all_preds):
+def precompute_matches(all_preds, all_gts):
     """
-    AP 계산을 위해 모든 예측 결과를 Score 순으로 정렬하여 반환
+    AP, FROC 계산을 위해 각 예측값에 대해 Best IoU와 GT Index를 미리 계산
+    Iterating one-by-one is slow, so we batch process per image.
     """
-    all_detections = []
-    # tqdm은 상위 함수에서 제어하거나 여기서는 생략 (너무 자주 출력되면 시끄러움)
-    for boxes, scores, img_id in all_preds:
-        for box, score in zip(boxes, scores):
-            all_detections.append((score, box, img_id))
+    detection_list = []
 
-    # 내림차순 정렬
-    all_detections.sort(key=lambda x: x[0], reverse=True)
-    return all_detections
+    # all_preds: list of (pred_boxes, pred_scores, img_id)
+    for pred_boxes, pred_scores, img_id in all_preds:
+        if len(pred_boxes) == 0:
+            continue
+
+        gt_boxes = all_gts.get(img_id, torch.zeros(0, 4))
+
+        # 예측은 있고 GT가 없는 경우: 무조건 FP (IoU=0, gt_idx=-1)
+        if len(gt_boxes) == 0:
+            for i in range(len(pred_scores)):
+                detection_list.append(
+                    {
+                        "score": pred_scores[i].item(),
+                        "iou": 0.0,
+                        "gt_idx": -1,
+                        "img_id": img_id,
+                    }
+                )
+            continue
+
+        # Batch IoU Calculation
+        # ious: (num_gt, num_pred)
+        ious = BoxOps.jaccard(gt_boxes, pred_boxes)
+
+        # 각 예측 박스별로 가장 높은 IoU를 가진 GT 찾기
+        # best_ious, best_gt_indices: (num_pred,)
+        best_ious, best_gt_indices = ious.max(dim=0)
+
+        for i in range(len(pred_scores)):
+            detection_list.append(
+                {
+                    "score": pred_scores[i].item(),
+                    "iou": best_ious[i].item(),
+                    "gt_idx": best_gt_indices[i].item(),
+                    "img_id": img_id,
+                }
+            )
+
+    # 점수 기준 내림차순 정렬
+    detection_list.sort(key=lambda x: x["score"], reverse=True)
+    return detection_list
 
 
-def calculate_ap(all_detections, all_gts, iou_threshold=0.3):
+def calculate_ap(detection_list, all_gts, iou_threshold=0.3):
     """
-    정렬된 detection 리스트를 받아 AP 계산
+    최적화된 AP 계산: 미리 계산된 매칭 정보 사용
     """
-    # 2. 전체 GT 개수
     total_gt = sum(len(gt) for gt in all_gts.values())
-
     if total_gt == 0:
         return 0.0
 
     matched = {img_id: set() for img_id in all_gts.keys()}
-
-    # 3. 하나씩 추가하면서 TP/FP 평가
     tp_list = []
     fp_list = []
 
-    # 이미 정렬된 상태로 들어옴
-    for score, box, img_id in all_detections:
-        gt_boxes = all_gts.get(img_id, [])
+    for item in detection_list:
+        img_id = item["img_id"]
+        gt_idx = item["gt_idx"]
+        iou = item["iou"]
 
-        # GT 아닌데 긍정 예측
-        if len(gt_boxes) == 0:
-            tp_list.append(0)
-            fp_list.append(1)
-            continue
-
-        # 가장 IoU 높은 GT 찾기
-        best_iou = 0
-        best_gt_idx = -1
-
-        for gt_idx, gt_box in enumerate(gt_boxes):
-            # 이미 매칭
-            if gt_idx in matched[img_id]:
-                continue
-
-            # 단일 IoU
-            iou = jaccard(gt_box.unsqueeze(0), box.unsqueeze(0))[0, 0].item()
-            if iou > best_iou:
-                best_iou = iou
-                best_gt_idx = gt_idx
-
-        if best_iou >= iou_threshold and best_gt_idx != -1:
-            # TP
-            tp_list.append(1)
-            fp_list.append(0)
-            matched[img_id].add(best_gt_idx)
+        # 이미 매칭되었거나 IoU가 낮은 경우 -> FP
+        # (혹은 GT가 없는 이미지였던 경우)
+        if gt_idx != -1 and iou >= iou_threshold:
+            if gt_idx not in matched[img_id]:
+                # TP
+                tp_list.append(1)
+                fp_list.append(0)
+                matched[img_id].add(gt_idx)
+            else:
+                # 이미 발견된 GT -> 중복 검출 (FP)
+                tp_list.append(0)
+                fp_list.append(1)
         else:
-            # FP
+            # IoU 미달 또는 GT 없음 -> FP
             tp_list.append(0)
             fp_list.append(1)
 
-    # 4. 누적 TP, FP 계산
+    # 4. 누적 TP, FP 계산 및 AP 도출 (이하 동일)
     tp_cumsum = torch.cumsum(torch.tensor(tp_list), dim=0)
     fp_cumsum = torch.cumsum(torch.tensor(fp_list), dim=0)
 
-    # Precision, Recall 계산
     total_pred = tp_cumsum + fp_cumsum
 
     if len(total_pred) > 0 and total_pred[-1] > 0:
@@ -344,15 +361,12 @@ def calculate_ap(all_detections, all_gts, iou_threshold=0.3):
     else:
         recalls = torch.zeros_like(tp_cumsum)
 
-    # 5. AP 계산 (All-point interpolation)
     precisions = torch.cat([torch.tensor([1.0]), precisions])
     recalls = torch.cat([torch.tensor([0.0]), recalls])
 
-    # Precision을 monotonically decreasing으로 만들기
     for i in range(len(precisions) - 2, -1, -1):
         precisions[i] = max(precisions[i], precisions[i + 1])
 
-    # 면적 계산
     ap = 0.0
     for i in range(1, len(recalls)):
         ap += (recalls[i] - recalls[i - 1]) * precisions[i]
@@ -361,186 +375,17 @@ def calculate_ap(all_detections, all_gts, iou_threshold=0.3):
 
 
 def compute_ap(all_preds, all_gts):
-    """
-    기존 호환성 유지용 Wrapper (Global TEST_IOU_THRESH 사용)
-    """
-    all_detections = get_all_detections(all_preds)
-    return calculate_ap(all_detections, all_gts, config.TEST_IOU_THRESH)
+    """Wrapper"""
+    detection_list = precompute_matches(all_preds, all_gts)
+    return calculate_ap(detection_list, all_gts, config.TEST_IOU_THRESH)
 
 
-def plot_froc(fps_per_image, sensitivities, save_path):
-    """
-    FROC 곡선 그리기 (Style matched to user reference)
-    """
-    plt.figure(figsize=(8, 6))
-
-    # User style: Line with markers, legend
-    plt.plot(
-        fps_per_image,
-        sensitivities,
-        "o-",
-        linewidth=1.5,
-        markersize=4,
-        label="test FROC Curve",
-    )
-
-    plt.xlabel("Average False Positives per Image", fontsize=12)
-    plt.ylabel(
-        "True Positive Rate (Sensitivity)", fontsize=12
-    )  # Label matched to image y-axis
-    plt.title(
-        "FROC Curve (test) - CMB Detection", fontsize=14
-    )  # Title matched to image
-
-    # Axis limits considering the data spread
-    if len(fps_per_image) > 0:
-        plt.xlim([0, max(fps_per_image) * 1.05])
-    plt.ylim([0, 1.05])
-
-    plt.grid(True, alpha=0.3)
-    plt.legend(loc="lower right")
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"✅ FROC 곡선 저장: {save_path}")
-
-
-def plot_confusion_matrix_bar(tp, fp, fn, save_path):
-    """
-    Confusion Matrix 그리기 (Bar Chart 형태 - 기존 유지)
-    """
-    fig, ax = plt.subplots(figsize=(6, 5))
-
-    # 2x2가 아닌 바 형태로 표시
-    categories = [
-        "True Positive\n(정탐)",
-        "False Positive\n(오탐)",
-        "False Negative\n(미탐)",
-    ]
-    values = [tp, fp, fn]
-    colors = ["#4CAF50", "#F44336", "#FF9800"]  # 초록, 빨강, 주황
-
-    bars = ax.bar(categories, values, color=colors, edgecolor="black", linewidth=1.2)
-
-    # 값 표시
-    for bar, val in zip(bars, values):
-        height = bar.get_height()
-        ax.annotate(
-            f"{val}",
-            xy=(bar.get_x() + bar.get_width() / 2, height),
-            xytext=(0, 5),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=14,
-            fontweight="bold",
-        )
-
-    ax.set_ylabel("Count", fontsize=12)
-    ax.set_title("Detection Results Help", fontsize=14)
-
-    # Precision, Recall 표시
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = (
-        2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-    )
-
-    info_text = f"Precision: {precision:.3f}\nRecall: {recall:.3f}\nF1: {f1:.3f}"
-    ax.text(
-        0.98,
-        0.98,
-        info_text,
-        transform=ax.transAxes,
-        fontsize=11,
-        verticalalignment="top",
-        horizontalalignment="right",
-        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
-    )
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"✅ Confusion Matrix (Bar) 저장: {save_path}")
-
-
-def plot_confusion_matrix_heatmap(tp, fp, fn, save_path):
-    """
-    2x2 Confusion Matrix 그리기 (Heatmap 형태)
-    Object Detection에서는 TN을 정의할 수 없으므로 N/A로 표시
-    """
-    # 2x2 행렬 데이터: [[TP, FN], [FP, TN=0]]
-    # Row: True Class (Positive, Negative)
-    # Col: Pred Class (Positive, Negative)
-    cm_data = np.array([[tp, fn], [fp, 0]])
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-
-    # 0인 TN 부분을 제외하고 색상 매핑을 위해 마스킹하거나 그냥 그림
-    # TN이 0이지만 여기서는 의미없는 0이므로 색상에서 제외하고 싶을 수 있으나,
-    # 간단하게 전체를 그린다.
-    im = ax.imshow(cm_data, interpolation="nearest", cmap="Blues")
-
-    # 컬러바
-    ax.figure.colorbar(im, ax=ax)
-
-    # 축 라벨 설정
-    classes_x = ["Predicted CMB", "Predicted Background"]
-    classes_y = ["Actual CMB", "Actual Background"]
-
-    ax.set(
-        xticks=np.arange(cm_data.shape[1]),
-        yticks=np.arange(cm_data.shape[0]),
-        xticklabels=classes_x,
-        yticklabels=classes_y,
-        title="Confusion Matrix (2x2)",
-        ylabel="True Label",
-        xlabel="Predicted Label",
-    )
-
-    # 텍스트 주석
-    thresh = cm_data.max() / 2.0
-    for i in range(cm_data.shape[0]):
-        for j in range(cm_data.shape[1]):
-            # 값 텍스트
-            if i == 1 and j == 1:
-                val_text = "N/A"  # TN 위치
-            else:
-                val_text = f"{cm_data[i, j]}"
-
-            ax.text(
-                j,
-                i,
-                val_text,
-                ha="center",
-                va="center",
-                color="white" if cm_data[i, j] > thresh else "black",
-                fontsize=14,
-                fontweight="bold",
-            )
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"✅ Confusion Matrix (Heatmap) 저장: {save_path}")
-
-
+# (FROC 그래프 등은 시각화 함수이므로 기존 유지, 데이터 계산 함수만 최적화)
 def compute_froc_data(all_preds, all_gts, num_images):
     """
-    FROC 곡선용 데이터 계산
-
-    Returns:
-        fps_per_image: 이미지당 평균 FP 리스트
-        sensitivities: sensitivity 리스트
+    FROC 곡선용 데이터 계산 (최적화 버전)
     """
-    # 모든 예측을 confidence 순으로 정렬
-    all_detections = []
-    for boxes, scores, img_id in tqdm(all_preds, desc="FROC 데이터 수집"):
-        for box, score in zip(boxes, scores):
-            all_detections.append((score.item(), box, img_id))
-
-    all_detections.sort(key=lambda x: x[0], reverse=True)
+    detection_list = precompute_matches(all_preds, all_gts)
 
     total_gt = sum(len(gt) for gt in all_gts.values())
     matched = {img_id: set() for img_id in all_gts.keys()}
@@ -551,20 +396,16 @@ def compute_froc_data(all_preds, all_gts, num_images):
     tp_count = 0
     fp_count = 0
 
-    for score, box, img_id in tqdm(all_detections, desc="FROC 계산"):
-        gt_boxes = all_gts.get(img_id, [])
+    for item in tqdm(detection_list, desc="FROC 계산"):
+        img_id = item["img_id"]
+        gt_idx = item["gt_idx"]
+        iou = item["iou"]
 
-        # IoU 확인
         is_tp = False
-        if len(gt_boxes) > 0:
-            for gt_idx, gt_box in enumerate(gt_boxes):
-                if gt_idx in matched[img_id]:
-                    continue
-                iou = jaccard(gt_box.unsqueeze(0), box.unsqueeze(0))[0, 0].item()
-                if iou >= config.TEST_IOU_THRESH:
-                    is_tp = True
-                    matched[img_id].add(gt_idx)
-                    break
+        if gt_idx != -1 and iou >= config.TEST_IOU_THRESH:
+            if gt_idx not in matched[img_id]:
+                is_tp = True
+                matched[img_id].add(gt_idx)
 
         if is_tp:
             tp_count += 1

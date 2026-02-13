@@ -4,7 +4,7 @@ import os
 import sys
 import torch
 from torch.utils.data import DataLoader
-from src.utils import Logger
+from src.logger import Logger
 from scripts.preprocess_data import convert_nii_folder_to_images, run_hdbet_processing
 from src.dataset import CMBsDatasetLMDB, collate_fn, BBOX_JSON_PATH
 from src.model import SSD_FE

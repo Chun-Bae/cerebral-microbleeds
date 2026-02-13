@@ -21,10 +21,15 @@ def get_transforms(device):
         K.RandomHorizontalFlip(p=0.5),
         K.RandomVerticalFlip(p=0.5),
         K.RandomAffine(
-            degrees=(-30, 30), translate=(0.1, 0.1), scale=(0.9, 2.0), p=0.8
+            degrees=(-30, 30),
+            translate=(0.03, 0.03),
+            scale=(0.8, 0.95),
+            p=0.8,
+            keepdim=True,
         ),
+        K.ColorJitter(brightness=(1.2, 1.5), p=0.5),
         K.RandomBrightness(brightness=(0.1, 0.3), p=0.5),
-        K.RandomGaussianBlur(kernel_size=(7, 7), sigma=(0.1, 3.0), p=0.2),
+        K.RandomGaussianBlur(kernel_size=(19, 19), sigma=(0.0, 3.0), p=0.2),
         data_keys=["image", "mask", "mask"],
         same_on_batch=False,
     ).to(device)

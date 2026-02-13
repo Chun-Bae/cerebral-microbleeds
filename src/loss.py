@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.utils import encode, jaccard, decode
+from src.box_ops import BoxOps
 
 
 class MultiBoxLoss(nn.Module):
@@ -54,7 +54,7 @@ class MultiBoxLoss(nn.Module):
             gt_boxes_b = gt_bboxes[b].to(device)
             gt_labels_b = gt_labels[b].to(device)
 
-            ious = jaccard(gt_boxes_b, anchors)
+            ious = BoxOps.jaccard(gt_boxes_b, anchors)
             values, gt_indices_max = ious.max(dim=0)
 
             pos_mask_b = values > self.iou_threshold
@@ -76,7 +76,7 @@ class MultiBoxLoss(nn.Module):
             pos_anchors = expanded_anchors[pos_mask]
             pos_pred_loc = pred_loc[pos_mask]
 
-            pos_targets_encoded = encode(
+            pos_targets_encoded = BoxOps.encode(
                 pos_target_boxes, pos_anchors, variances=[0.1, 0.2]
             )
             loc_loss = F.smooth_l1_loss(
