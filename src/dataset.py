@@ -17,7 +17,8 @@ BBOX_JSON_PATH = config.BBOX_JSON_PATH
 
 
 def get_transforms(device):
-    train_transform = K.AugmentationSequential(
+    train_transform = 
+        K.AugmentationSequential(
         K.RandomHorizontalFlip(p=0.5),
         K.RandomVerticalFlip(p=0.5),
         K.RandomAffine(
@@ -29,7 +30,7 @@ def get_transforms(device):
         ),
         K.ColorJitter(brightness=(1.2, 1.5), p=0.5),
         K.RandomBrightness(brightness=(0.1, 0.3), p=0.5),
-        K.RandomGaussianBlur(kernel_size=(19, 19), sigma=(0.0, 3.0), p=0.2),
+        K.RandomGaussianBlur(kernel_size=(19, 19), sigma=(0.0, 3.0), p=0.5),
         data_keys=["image", "mask", "mask"],
         same_on_batch=False,
     ).to(device)

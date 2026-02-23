@@ -4,6 +4,11 @@ torch.backends.cudnn.benchmark = True
 import torch.nn.functional as F
 from torchvision.ops import nms
 from src.box_ops import BoxOps
+from src.plot_utils import (
+    plot_froc,
+    plot_confusion_matrix_bar,
+    plot_confusion_matrix_heatmap,
+)
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -654,7 +659,7 @@ def evaluate(model, testloader, dataset, device, save_dir):
     # 5-1. 사용자 지정 IoU (기존 방식)
     # 정렬은 한 번만 수행
     print("\n  📐 AP 계산을 위한 데이터 정렬 중...")
-    all_detections = get_all_detections(all_preds)
+    all_detections = precompute_matches(all_preds, all_gts)
 
     ap = calculate_ap(all_detections, all_gts, config.TEST_IOU_THRESH)
 
@@ -736,7 +741,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lmdb_path",
         type=str,
-        default="data/lmdb/holdout_test.lmdb",
+        default="data/lmdb/fixed_split/test.lmdb",
         help="Path to LMDB dataset",
     )
     args = parser.parse_args()
