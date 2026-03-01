@@ -72,27 +72,36 @@ class CMBsDatasetLMDB(Dataset):
 
         # 인덱스 → 파일명 매핑 (lmdb에 있는 key)
         self.idx_to_name = {}
+        self.valid_indices = []
+        self.is_train = is_train
 
         tmp_env = lmdb.open(
             lmdb_path, readonly=True, lock=False, readahead=False, meminit=False
         )
 
         with tmp_env.begin(write=False) as txn:
-            self.length = int(txn.get(b"length").decode())
+            raw_length = int(txn.get(b"length").decode())
 
-            for i in tqdm(range(self.length), desc="인덱스 매핑"):
+            for i in tqdm(range(raw_length), desc="인덱스 매핑"):
                 str_idx = f"{i:05d}"
                 name_bytes = txn.get(f"{str_idx}_name".encode())
                 if name_bytes:
-                    self.idx_to_name[i] = name_bytes.decode()
+                    filename = name_bytes.decode()
+                    
+                    # 학습 시 병변이 없는 슬라이스를 제외
+                    bboxes = self.bboxes_dict.get(filename, [])
+                    if is_train and len(bboxes) == 0:
+                        continue
+                        
+                    self.idx_to_name[len(self.valid_indices)] = filename
+                    self.valid_indices.append(i)
+
+            self.length = len(self.valid_indices)
 
         tmp_env.close()
 
         # 파일명 → 인덱스 매핑 (2.5D)
         self.name_to_idx = {v: k for k, v in self.idx_to_name.items()}
-
-        # Copy-Paste를 위한 병변 인덱스 뱅크
-        self.is_train = is_train
 
     def _init_db(self):
         """
@@ -118,6 +127,7 @@ class CMBsDatasetLMDB(Dataset):
         if self.env is None:
             self._init_db()
 
+        real_idx = self.valid_indices[idx]
         curr_name = self.idx_to_name[idx]
 
         # 1. 2.5D Logic Removed -> Single Slice duplicated to 3 channels
@@ -136,15 +146,15 @@ class CMBsDatasetLMDB(Dataset):
                     0
                 )  # (1, H, W)
 
-            curr_tensor = load_img_tensor(idx)
+            curr_tensor = load_img_tensor(real_idx)
             if curr_tensor is None:
-                raise RuntimeError(f"LMDB 읽기 실패: index {idx}")
+                raise RuntimeError(f"LMDB 읽기 실패: index {real_idx}")
 
             # 3채널 복사 (Grayscale -> RGB imitation)
             swi_tensor = curr_tensor.repeat(3, 1, 1)
 
             # 마스크 로드 (현재 슬라이스 기준)
-            str_idx = f"{idx:05d}"
+            str_idx = f"{real_idx:05d}"
             roi_bytes = txn.get(f"{str_idx}_mask".encode())
             roi_arr = np.frombuffer(roi_bytes, dtype=np.uint8)
             roi_mask = cv2.imdecode(roi_arr, cv2.IMREAD_UNCHANGED)  # (H, W)

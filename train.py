@@ -7,6 +7,7 @@ import os
 import cv2
 import numpy as np
 from src.dataset import normalize_16bit, get_transforms
+import config
 
 torch.backends.cudnn.benchmark = True
 
@@ -64,16 +65,31 @@ def train_one_epoch(
     device,
     transform,
     epoch,
-    num_epochs,
+    max_iterations,
     scaler,
+    global_step,
 ):
     model.train()
     total_loss = 0.0
     total_cls_loss = 0.0
     total_loc_loss = 0.0
+    num_batches = 0
 
-    pbar = tqdm(train_loader, desc=f"[Epoch {epoch}/{num_epochs}]")
+    pbar = tqdm(
+        train_loader, desc=f"[Epoch {epoch}] Iter {global_step}/{max_iterations}"
+    )
     for batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes in pbar:
+        # lr scheduler
+        if global_step < 80000:
+            lr = 1e-3
+        elif global_step < 100000:
+            lr = 1e-4
+        else:
+            lr = 1e-5
+
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+
         # GPU
         batch_img = batch_img.to(device)
         batch_lesion_mask = batch_lesion_mask.to(device)
@@ -137,17 +153,24 @@ def train_one_epoch(
         else:
             gpu_mem_str = "N/A"
 
+        global_step += 1
+        num_batches += 1
+
         pbar.set_postfix(
             {
                 "loss": f"{loss.item():.4f}",
                 "cls": f"{cls_loss.item():.4f}",
                 "loc": f"{loc_loss.item():.4f}",
+                "LR": f"{lr:.0e}",
                 "GPU": gpu_mem_str,
             }
         )
 
-    n = max(1, len(train_loader))
-    return total_loss / n, total_cls_loss / n, total_loc_loss / n
+        if global_step >= max_iterations:
+            break
+
+    n = max(1, num_batches)
+    return total_loss / n, total_cls_loss / n, total_loc_loss / n, global_step
 
 
 def validate(model, val_loader, criterion, device):
@@ -196,10 +219,10 @@ def train(
     optimizer,
     criterion,
     device,
-    num_epochs,
     fold_idx=0,
     start_epoch=1,
     loss_history=None,
+    start_global_step=None,
 ):
     # 1. Transform 생성
     train_transform, _ = get_transforms(device)
@@ -218,9 +241,16 @@ def train(
             "val_loc_loss": [],
         }
 
-    for epoch in range(start_epoch, num_epochs + 1):
+    max_iterations = getattr(config, "MAX_ITERATIONS", 120000)
+    if start_global_step is not None:
+        global_step = start_global_step
+    else:
+        global_step = (start_epoch - 1) * len(train_loader)
+    epoch = start_epoch
+
+    while global_step < max_iterations:
         # 2. 학습 실행
-        train_loss, train_cls, train_loc = train_one_epoch(
+        train_loss, train_cls, train_loc, global_step = train_one_epoch(
             model,
             train_loader,
             optimizer,
@@ -228,18 +258,19 @@ def train(
             device,
             train_transform,
             epoch,
-            num_epochs,
+            max_iterations,
             scaler,
+            global_step,
         )
 
-        # 3. 검증 실행 (10 Epoch마다)
+        # 3. 검증 실행 (10 Epoch마다 또는 max_iteration 도달 시)
         validation_interval = 10
-        if epoch % validation_interval == 0 or epoch == num_epochs:
+        if epoch % validation_interval == 0 or global_step >= max_iterations:
             val_loss, val_cls, val_loc = validate(model, val_loader, criterion, device)
 
             # 4. 로그 출력
             print(
-                f"Epoch {epoch}/{num_epochs} - "
+                f"Epoch {epoch} | Iter {global_step}/{max_iterations} - "
                 f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
                 f"Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f}) | "
                 f"LR: {optimizer.param_groups[0]['lr']:.2e}"
@@ -266,13 +297,16 @@ def train(
             "val_loss": val_loss,
             "loss_history": loss_history,
             "fold_idx": fold_idx,
+            "global_step": global_step,
             "config": {
-                "num_epochs": num_epochs,
+                "max_iterations": max_iterations,
                 "learning_rate": optimizer.param_groups[0]["lr"],
                 "batch_size": train_loader.batch_size,
             },
         }
         # 항상 최신 저장
         torch.save(checkpoint, f"weights/latest_ssd_fold_{fold_idx}.pth")
+
+        epoch += 1
 
     print(f"\n학습 완료!")

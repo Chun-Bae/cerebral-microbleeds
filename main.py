@@ -160,10 +160,8 @@ def select_pretrained_weights():
             return None
 
 
-def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None):
+def train_fold(fold_idx, result_dir, pretrained_weights=None):
     """단일 Fold 학습"""
-    if target_epoch is None:
-        target_epoch = config.NUM_EPOCHS
     print(f"\n{'=' * 50}")
     if config.USE_K_FOLD:
         print(f"  FOLD {fold_idx + 1} / {config.K_FOLDS}")
@@ -180,6 +178,14 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
     # 2. DataLoader 생성
     train_loader, val_loader = get_fold_loaders(fold_idx)
 
+    import math
+
+    estimated_epochs = math.ceil(config.MAX_ITERATIONS / len(train_loader))
+    print(f"  📌 총 {config.MAX_ITERATIONS} Iterations 까지 반복합니다.")
+    print(
+        f"  📌 1 Epoch = {len(train_loader)} Iterations (예상 학습 종료: 약 {estimated_epochs} Epochs)"
+    )
+
     # 3. 모델 초기화
     model = SSD_FE(num_classes=2).to(config.DEVICE)
 
@@ -194,6 +200,7 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
     # 5. 시작
     start_epoch = 1
     loss_history = None
+    start_global_step = None
 
     # 5-1. 사전 학습 가중치 로드 (checkpoint 형태)
     if pretrained_weights and os.path.exists(pretrained_weights):
@@ -212,6 +219,11 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
             if "epoch" in checkpoint:
                 start_epoch = checkpoint["epoch"] + 1
                 print(f"  📍 저장된 epoch: {checkpoint['epoch']}")
+
+            # global_step 복원
+            if "global_step" in checkpoint:
+                start_global_step = checkpoint["global_step"]
+                print(f"  📍 저장된 이터레이션: {start_global_step}")
 
             if "val_loss" in checkpoint:
                 print(f"  📊 저장된 Val Loss: {checkpoint['val_loss']:.4f}")
@@ -233,10 +245,10 @@ def train_fold(fold_idx, result_dir, pretrained_weights=None, target_epoch=None)
         optimizer=optimizer,
         criterion=criterion,
         device=config.DEVICE,
-        num_epochs=target_epoch,
         fold_idx=fold_idx,
         start_epoch=start_epoch,
         loss_history=loss_history,
+        start_global_step=start_global_step,
     )
 
     return fold_result_dir
@@ -341,9 +353,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="CMB Detection Training")
     parser.add_argument(
-        "--epochs", type=int, default=None, help="Target epoch to train until"
-    )
-    parser.add_argument(
         "--weights", type=str, default=None, help="Path to pretrained weights"
     )
     parser.add_argument(
@@ -368,9 +377,8 @@ def main():
     print(f"Results directory created at: {result_dir}")
 
     print(f"Device: {config.DEVICE}")
-    target_num_epochs = args.epochs if args.epochs is not None else config.NUM_EPOCHS
     print(
-        f"K-Fold: {config.K_FOLDS}, Epochs: {target_num_epochs}, Batch: {config.BATCH_SIZE}, LR: {config.LEARNING_RATE}"
+        f"K-Fold: {config.K_FOLDS}, Iterations: {config.MAX_ITERATIONS}, Batch: {config.BATCH_SIZE}, LR: {config.LEARNING_RATE}"
     )
 
     # 2. 데이터 준비 (NIfTI → PNG)
@@ -432,9 +440,7 @@ def main():
                 # fold 특정 패턴이 없는 일반 가중치(예: vgg_backbone.pth)는 그대로 사용
                 pass
 
-        fold_dir = train_fold(
-            fold_idx, result_dir, current_fold_weights, target_epoch=target_num_epochs
-        )
+        fold_dir = train_fold(fold_idx, result_dir, current_fold_weights)
         fold_results.append(fold_dir)
 
     # 4. 학습 완료 요약

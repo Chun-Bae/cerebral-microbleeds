@@ -19,14 +19,15 @@ RESULTS_DIR = "results"
 WEIGHTS_DIR = "weights"
 
 # === Data Params ===
-BATCH_SIZE = 32
+BATCH_SIZE = 4
 NUM_WORKERS = 8
 SPLIT_RATIO = 0.2
 APPLY_N4_BIAS_CORRECTION = True
 
 # === Model / Training Params ===
-NUM_EPOCHS = 200
-LEARNING_RATE = 1e-4
+MAX_ITERATIONS = 120000
+LEARNING_RATE = 1e-3  # Initial LR
+
 SEED = 42
 K_FOLDS = 10
 USE_K_FOLD = True
