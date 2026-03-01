@@ -122,17 +122,20 @@ class SSD_FE(nn.Module):
     def __init__(self, num_classes):
         super(SSD_FE, self).__init__()
         self.num_classes = num_classes
-        # Feature map sizes assuming 512x512 input
-        self.feature_maps = [(128, 128), (64, 64), (32, 32)]
+        self.feature_maps = [(64, 64), (32, 32), (16, 16), (8, 8), (4, 4)]
         self.scales = [
-            [0.015, 0.025],
-            [0.035, 0.050],
-            [0.070, 0.100],
+            [0.015, 0.030],
+            [0.030, 0.045],
+            [0.045, 0.060],
+            [0.060, 0.075],
+            [0.075, 0.090],
         ]
         self.ratios = [
-            [0.8750, 1.0000, 1.1250],
-            [0.8750, 1.0000, 1.1250],
-            [0.8750, 1.0000, 1.1250],
+            [1, 2, 0.5],
+            [1, 2, 3, 0.5, 0.333],
+            [1, 2, 3, 0.5, 0.333],
+            [1, 2, 3, 0.5, 0.333],
+            [1, 2, 0.5],
         ]
 
         self.anchors = AnchorGenerator(self.feature_maps, self.scales, self.ratios)
@@ -141,42 +144,94 @@ class SSD_FE(nn.Module):
         self.vgg16 = models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1).features
 
         self.fe = FELayer()
+        self.vgg16[30] = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
+
+        # Conv6
+        self.conv6 = nn.Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6)
+        self.relu6 = nn.ReLU(inplace=True)
+
+        # Conv7
+        self.conv7 = nn.Conv2d(1024, 1024, kernel_size=1)
+        self.relu7 = nn.ReLU(inplace=True)
+
+        # Extra Block 1
+        self.conv8_1 = nn.Conv2d(1024, 256, kernel_size=1)
+        self.relu8_1 = nn.ReLU(inplace=True)
+        self.conv8_2 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1)
+        self.relu8_2 = nn.ReLU(inplace=True)
+
+        # Extra Block 2
+        self.conv9_1 = nn.Conv2d(512, 128, kernel_size=1)
+        self.relu9_1 = nn.ReLU(inplace=True)
+        self.conv9_2 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
+        self.relu9_2 = nn.ReLU(inplace=True)
+
+        # Extra Block 3
+        self.conv10_1 = nn.Conv2d(256, 128, kernel_size=1)
+        self.relu10_1 = nn.ReLU(inplace=True)
+        self.conv10_2 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
+        self.relu10_2 = nn.ReLU(inplace=True)
 
         self.heads = nn.ModuleList(
             [
-                SSDHead(256, 4, self.num_classes),  # stage1 - conv3_3
-                SSDHead(512, 4, self.num_classes),  # stage2 - conv4_3
-                SSDHead(512, 4, self.num_classes),  # stage3 - conv5_3
+                SSDHead(512, 4, self.num_classes),  # conv4_3
+                SSDHead(1024, 6, self.num_classes),  # conv7
+                SSDHead(512, 6, self.num_classes),  # conv8_2
+                SSDHead(256, 6, self.num_classes),  # conv9_2
+                SSDHead(256, 4, self.num_classes),  # conv10_2
             ]
         )
 
         self._init_weights()
 
     def _init_weights(self):
-        # Heads are initialized in their own __init__
-        pass
+        nn.init.xavier_uniform_(self.conv6.weight)
+        nn.init.constant_(self.conv6.bias, 0)
+
+        nn.init.xavier_uniform_(self.conv7.weight)
+        nn.init.constant_(self.conv7.bias, 0)
+
+        nn.init.xavier_uniform_(self.conv8_1.weight)
+        nn.init.constant_(self.conv8_1.bias, 0)
+
+        nn.init.xavier_uniform_(self.conv8_2.weight)
+        nn.init.constant_(self.conv8_2.bias, 0)
+
+        nn.init.xavier_uniform_(self.conv9_1.weight)
+        nn.init.constant_(self.conv9_1.bias, 0)
+
+        nn.init.xavier_uniform_(self.conv10_1.weight)
+        nn.init.constant_(self.conv10_1.bias, 0)
+
+        nn.init.xavier_uniform_(self.conv10_2.weight)
+        nn.init.constant_(self.conv10_2.bias, 0)
 
     def forward(self, x, gt_image=None, gt_mask=None):
         anchor_features = []
 
-        # Stage 1: conv3_3
-        # 0 ~ 15 (ReLU3_3)
-        x = self.vgg16[:16](x)
-        anchor_features.append(x)
+        x = self.vgg16[:23](x)
 
-        # Stage 2: conv4_3
-        # 16 (Pool3) ~ 22 (ReLU4_3)
-        x = self.vgg16[16:23](x)
-
-        # Apply Feature Enhancement to the first feature map
+        # Feature Enhancement 적용
         if gt_mask is not None and gt_image is not None:
             x = self.fe(x, gt_image, gt_mask)
-            
         anchor_features.append(x)
 
-        # Stage 3: conv5_3
-        # 23 (Pool4) ~ 29 (ReLU5_3)
-        x = self.vgg16[23:30](x)
+        x = self.vgg16[23:](x)
+
+        x = self.relu6(self.conv6(x))
+        x = self.relu7(self.conv7(x))
+        anchor_features.append(x)
+
+        x = self.relu8_1(self.conv8_1(x))
+        x = self.relu8_2(self.conv8_2(x))
+        anchor_features.append(x)
+
+        x = self.relu9_1(self.conv9_1(x))
+        x = self.relu9_2(self.conv9_2(x))
+        anchor_features.append(x)
+
+        x = self.relu10_1(self.conv10_1(x))
+        x = self.relu10_2(self.conv10_2(x))
         anchor_features.append(x)
 
         # Heads
