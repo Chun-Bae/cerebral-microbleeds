@@ -1,312 +1,94 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from tqdm import tqdm
-import math
+import argparse
 import os
-import cv2
-import numpy as np
-from src.dataset import normalize_16bit, get_transforms
+import datetime
+import sys
+
 import config
-
-torch.backends.cudnn.benchmark = True
-
-
-def masks_to_bboxes(masks):
-    """
-    증강된 마스크(B, 1, H, W)에서 다시 BBox를 추출
-    return: List [Tensor(N, 4), Tensor(M, 4), ...]
-    """
-    batch_size, _, H, W = masks.shape
-    new_bboxes_list = []
-
-    # CPU numpy로 변환 (cv2 사용을 위해)
-    masks_np = masks.detach().cpu().numpy()
-
-    for i in range(batch_size):
-        mask_np = masks_np[i, 0]  # (H, W)
-
-        # 1. 단순 이진화 (0 or 255)
-        binary = (mask_np > 0).astype(np.uint8) * 255
-
-        # 2. 윤곽선 찾기
-        contours, _ = cv2.findContours(
-            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        bboxes = []
-        for cnt in contours:
-            # 3. bbox 계산
-            x, y, w, h = cv2.boundingRect(cnt)
-
-            if w <= 0 or h <= 0:
-                continue
-
-            cx = (x + w / 2) / W
-            cy = (y + h / 2) / H
-            nw = w / W
-            nh = h / H
-
-            bboxes.append([cx, cy, nw, nh])
-
-        if len(bboxes) > 0:
-            new_bboxes_list.append(torch.tensor(bboxes, dtype=torch.float32))
-        else:
-            new_bboxes_list.append(torch.zeros((0, 4), dtype=torch.float32))
-
-    return new_bboxes_list
+from src.pipelines.data_pipeline import DataPipeLine
+from src.pipelines.train_pipeline import TrainPipeline
+from src.utils.logger import Logger
 
 
-def train_one_epoch(
-    model,
-    train_loader,
-    optimizer,
-    criterion,
-    device,
-    transform,
-    epoch,
-    max_iterations,
-    scaler,
-    global_step,
-):
-    model.train()
-    total_loss = 0.0
-    total_cls_loss = 0.0
-    total_loc_loss = 0.0
-    num_batches = 0
-
-    pbar = tqdm(
-        train_loader, desc=f"[Epoch {epoch}] Iter {global_step}/{max_iterations}"
+def main():
+    parser = argparse.ArgumentParser(description="CMB Detection Training")
+    parser.add_argument(
+        "--prepare_data",
+        action="store_true",
+        help="Run data preprocessing and LMDB creation before training",
     )
-    for batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes in pbar:
-        # lr scheduler
-        if global_step < 80000:
-            lr = 1e-3
-        elif global_step < 100000:
-            lr = 1e-4
-        else:
-            lr = 1e-5
+    parser.add_argument(
+        "--weights",
+        type=str,
+        default=None,
+        help="Optional path to pretrained weights to resume training",
+    )
+    parser.add_argument(
+        "--fixed_split",
+        action="store_true",
+        help="Force use fixed split instead of K-Fold",
+    )
+    parser.add_argument(
+        "--folds",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Specific fold indices to train (e.g., --folds 0 1 2). If not provided, runs all folds.",
+    )
+    args = parser.parse_args()
 
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
-
-        # GPU
-        batch_img = batch_img.to(device)
-        batch_lesion_mask = batch_lesion_mask.to(device)
-        batch_roi_mask = batch_roi_mask.to(device)
-
-        # 1. 전처리 및 정규화
-        # 이미지, 병변마스크, 뇌마스크를 함께 변환 (3개 리턴)
-        batch_img, batch_lesion_mask, batch_roi_mask = transform(
-            batch_img, batch_lesion_mask, batch_roi_mask
-        )
-
-        # 2. 증강된 마스크에서 BBox 다시 추출
-        # Kornia로 인해 위치가 변했을 수 있으므로 마스크에서 역산하여 BBox 업데이트
-        batch_bboxes = masks_to_bboxes(batch_lesion_mask)
-
-        # 입력 이미지 정규화
-        batch_img = normalize_16bit(batch_img)
-
-        try:
-            # 3. forward (AMP autocast)
-            with torch.amp.autocast("cuda"):
-                # forward(x, gt_image, gt_mask) - 학습 시 FE 적용
-                # batch_lesion_mask 증강된 것을 넣어야 함
-                pred_locs, pred_scores, anchors = model(
-                    batch_img, batch_img, batch_lesion_mask
-                )
-
-                # 4. GT 준비 (bboxes and label)
-                gt_labels = [
-                    torch.ones(len(bboxes)).long().to(device) for bboxes in batch_bboxes
-                ]
-
-                # 5. MultiBox Loss 계산
-                loss, cls_loss, loc_loss = criterion(
-                    pred_locs,
-                    pred_scores,
-                    anchors,
-                    batch_bboxes,
-                    gt_labels,
-                    batch_roi_mask,
-                )
-
-            # 6. Backward
-            optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            total_loss += loss.item()
-            total_cls_loss += cls_loss.item()
-            total_loc_loss += loc_loss.item()
-
-        except Exception as e:
-            print(f"Error during training step: {e}")
-            continue
-
-        # GPU 메모리 사용량 (used/total GB)
-        if torch.cuda.is_available():
-            gpu_used = torch.cuda.memory_reserved() / (1024**3)
-            gpu_mem_str = f"{gpu_used:.1f}GB"
-        else:
-            gpu_mem_str = "N/A"
-
-        global_step += 1
-        num_batches += 1
-
-        pbar.set_postfix(
-            {
-                "loss": f"{loss.item():.4f}",
-                "cls": f"{cls_loss.item():.4f}",
-                "loc": f"{loc_loss.item():.4f}",
-                "LR": f"{lr:.0e}",
-                "GPU": gpu_mem_str,
-            }
-        )
-
-        if global_step >= max_iterations:
+    # 0. 가중치 이름 입력
+    while True:
+        run_name = input(
+            "\n📝 이번 학습의 이름(목적/버전)을 입력해주세요 (예: ssd_fe_base, lr_tuning): "
+        ).strip()
+        if run_name:
+            # 안전한 디렉토리 명으로 변환 (공백은 언더바로)
+            run_name = run_name.replace(" ", "_")
             break
+        print("⚠️ 학습 이름은 필수 입력 사항입니다! 공란으로 넘길 수 없습니다.")
 
-    n = max(1, num_batches)
-    return total_loss / n, total_cls_loss / n, total_loc_loss / n, global_step
+    # 1. 로거 및 결과 폴더 준비
+    run_timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+    result_dir = os.path.join(config.RESULTS_DIR, f"train_{run_name}_{run_timestamp}")
+    os.makedirs(result_dir, exist_ok=True)
+    log = Logger(os.path.join(result_dir, "train_log.txt"))
 
+    log.info(f"========== TRAINING START ==========")
+    log.info(f"Result Directory: {result_dir}")
+    log.info(f"====================================\n")
 
-def validate(model, val_loader, criterion, device):
-    model.eval()
-
-    total_loss = 0.0
-    total_cls_loss = 0.0
-    total_loc_loss = 0.0
-
-    with torch.no_grad():
-        pbar = tqdm(val_loader, desc="Validating")
-        for batch_img, batch_lesion_mask, batch_roi_mask, batch_bboxes in pbar:
-            # GPU
-            batch_img = batch_img.to(device)
-            batch_roi_mask = batch_roi_mask.to(device)
-            # Validation 시에는 증강을 안하므로 batch_bboxes 그대로 사용
-
-            # 정규화
-            batch_img = normalize_16bit(batch_img)
-
-            # 1. forward
-            # Validation에서는 FE 적용 안 함 (테스트 모드)
-            pred_locs, pred_scores, anchors = model(batch_img)
-
-            # 2. GT
-            gt_labels = [
-                torch.ones(len(bboxes)).long().to(device) for bboxes in batch_bboxes
-            ]
-
-            loss, cls_loss, loc_loss = criterion(
-                pred_locs, pred_scores, anchors, batch_bboxes, gt_labels, batch_roi_mask
-            )
-
-            total_loss += loss.item()
-            total_cls_loss += cls_loss.item()
-            total_loc_loss += loc_loss.item()
-
-    n = max(1, len(val_loader))
-    return total_loss / n, total_cls_loss / n, total_loc_loss / n
-
-
-def train(
-    model,
-    train_loader,
-    val_loader,
-    optimizer,
-    criterion,
-    device,
-    fold_idx=0,
-    start_epoch=1,
-    loss_history=None,
-    start_global_step=None,
-):
-    # 1. Transform 생성
-    train_transform, _ = get_transforms(device)
-
-    # AMP GradScaler 생성
-    scaler = torch.amp.GradScaler("cuda")
-
-    # Loss 히스토리 초기화
-    if loss_history is None:
-        loss_history = {
-            "train_loss": [],
-            "val_loss": [],
-            "train_cls_loss": [],
-            "train_loc_loss": [],
-            "val_cls_loss": [],
-            "val_loc_loss": [],
-        }
-
-    max_iterations = getattr(config, "MAX_ITERATIONS", 120000)
-    if start_global_step is not None:
-        global_step = start_global_step
+    # 1. 데이터 파이프라인 (선택적)
+    if args.prepare_data:
+        log.info("🚀 [Step 1] 데이터 파이프라인 가동 (전처리 및 DB 생성)...")
+        data_pipeline = DataPipeLine()
+        data_pipeline.run()
     else:
-        global_step = (start_epoch - 1) * len(train_loader)
-    epoch = start_epoch
+        log.info("⏩ [Step 1] 데이터 전처리 스킵 (이미 구축된 LMDB 사용 가정)")
 
-    while global_step < max_iterations:
-        # 2. 학습 실행
-        train_loss, train_cls, train_loc, global_step = train_one_epoch(
-            model,
-            train_loader,
-            optimizer,
-            criterion,
-            device,
-            train_transform,
-            epoch,
-            max_iterations,
-            scaler,
-            global_step,
-        )
-
-        # 3. 검증 실행 (10 Epoch마다 또는 max_iteration 도달 시)
-        validation_interval = 10
-        if epoch % validation_interval == 0 or global_step >= max_iterations:
-            val_loss, val_cls, val_loc = validate(model, val_loader, criterion, device)
-
-            # 4. 로그 출력
-            print(
-                f"Epoch {epoch} | Iter {global_step}/{max_iterations} - "
-                f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
-                f"Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f}) | "
-                f"LR: {optimizer.param_groups[0]['lr']:.2e}"
-            )
+    # 2. 훈련 대상 Fold 파악
+    use_fixed_split = args.fixed_split or not getattr(config, "USE_K_FOLD", False)
+    if use_fixed_split:
+        folds_to_run = [0]
+        log.info("📌 Fixed Split 모드로 학습 진행합니다 (Fold 0)")
+    else:
+        if args.folds is not None:
+            folds_to_run = args.folds
+            log.info(f"📌 선택된 K-Fold 만 학습 진행합니다: {folds_to_run}")
         else:
-            val_loss, val_cls, val_loc = 0.0, 0.0, 0.0
+            folds_to_run = list(range(getattr(config, "K_FOLDS", 5)))
+            log.info(f"📌 전체 K-Fold 학습 진행합니다 (총 {len(folds_to_run)} Folds)")
 
-        # 3-1. Loss 히스토리에 추가
-        loss_history["train_loss"].append(train_loss)
-        loss_history["val_loss"].append(val_loss)
-        loss_history["train_cls_loss"].append(train_cls)
-        loss_history["train_loc_loss"].append(train_loc)
-        loss_history["val_cls_loss"].append(val_cls)
-        loss_history["val_loc_loss"].append(val_loc)
+    # 3. 훈련 파이프라인
+    log.info("\n🚀 [Step 2] 훈련 파이프라인 가동...")
+    train_pipeline = TrainPipeline(
+        use_fixed_split=use_fixed_split,
+        folds_to_run=folds_to_run,
+        weights_path=args.weights,
+        result_dir=result_dir,
+    )
 
-        # 5. Checkpoint 저장 (매 epoch 최신 상태 덮어쓰기)
-        os.makedirs("weights", exist_ok=True)
-        checkpoint = {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scaler_state_dict": scaler.state_dict(),
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-            "loss_history": loss_history,
-            "fold_idx": fold_idx,
-            "global_step": global_step,
-            "config": {
-                "max_iterations": max_iterations,
-                "learning_rate": optimizer.param_groups[0]["lr"],
-                "batch_size": train_loader.batch_size,
-            },
-        }
-        # 항상 최신 저장
-        torch.save(checkpoint, f"weights/latest_ssd_fold_{fold_idx}.pth")
+    train_pipeline.run()
 
-        epoch += 1
 
-    print(f"\n학습 완료!")
+if __name__ == "__main__":
+    main()
