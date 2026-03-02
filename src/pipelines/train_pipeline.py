@@ -25,13 +25,11 @@ class TrainPipeline:
         self,
         use_fixed_split=False,
         folds_to_run=None,
-        weights_path=None,
         result_dir=None,
         model_name="SSD_FE",
         run_name="default",
     ):
         self.use_k_fold = not use_fixed_split
-        self.pretrained_weights = weights_path
         self.model_name = model_name
         self.run_name = run_name
         self.result_dir = result_dir
@@ -63,7 +61,6 @@ class TrainPipeline:
             criterion=self.criterion,
             device=device,
             fold_idx=fold_idx,
-            pretrained_weights=self.pretrained_weights,
             use_k_fold=self.use_k_fold,
             model_name=self.model_name,
             run_name=self.run_name,

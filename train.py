@@ -10,17 +10,23 @@ from src.utils.logger import Logger
 
 
 def main():
+    # 0.5 모델 선택 (동적 로딩)
+    import src.models as models_module
+
+    available_models = models_module.__all__
+
     parser = argparse.ArgumentParser(description="CMB Detection Training")
+    parser.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        choices=available_models,
+        help=f"Model architecture to use for training. Options: {', '.join(available_models)}",
+    )
     parser.add_argument(
         "--prepare_data",
         action="store_true",
         help="Run data preprocessing and LMDB creation before training",
-    )
-    parser.add_argument(
-        "--weights",
-        type=str,
-        default=None,
-        help="Optional path to pretrained weights to resume training",
     )
     parser.add_argument(
         "--fixed_split",
@@ -34,36 +40,19 @@ def main():
         default=None,
         help="Specific fold indices to train (e.g., --folds 0 1 2). If not provided, runs all folds.",
     )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default="default_run",
+        help="Name of this training run (used for saving weights and logs)",
+    )
     args = parser.parse_args()
 
-    # 0. 가중치 이름 입력
-    while True:
-        run_name = input(
-            "\n📝 이번 학습의 이름을 입력해주세요 (예: compile_test): "
-        ).strip()
-        if run_name:
-            # 안전한 디렉토리 명으로 변환 (공백은 언더바로)
-            run_name = run_name.replace(" ", "_")
-            break
-        print("⚠️ 학습 이름은 필수 입력 사항입니다! 공란으로 넘길 수 없습니다.")
+    # 0. 가중치 이름
+    run_name = args.run_name.replace(" ", "_")
 
     # 0.5 모델 선택 (동적 로딩)
-    import src.models as models_module
-
-    available_models = models_module.__all__
-
-    print("\n[ 모델 아키텍처 선택 ]")
-    for i, m_name in enumerate(available_models, start=1):
-        print(f"{i}. {m_name}")
-
-    while True:
-        model_choice = input(
-            f"👉 사용할 모델의 번호를 입력하세요 (1 ~ {len(available_models)}): "
-        ).strip()
-        if model_choice.isdigit() and 1 <= int(model_choice) <= len(available_models):
-            model_name = available_models[int(model_choice) - 1]
-            break
-        print(f"⚠️ 1 부터 {len(available_models)} 까지의 숫자를 입력해주세요.")
+    model_name = args.model
 
     # 1. 로거 및 결과 폴더 준비
     run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
@@ -101,7 +90,6 @@ def main():
     train_pipeline = TrainPipeline(
         use_fixed_split=use_fixed_split,
         folds_to_run=folds_to_run,
-        weights_path=args.weights,
         result_dir=result_dir,
         model_name=model_name,
         run_name=run_name,

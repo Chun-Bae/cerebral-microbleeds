@@ -1,6 +1,7 @@
 import time
 import torch
 import config
+import os
 from src.datasets import get_transforms
 from src.utils.logger import log
 from src.core.training.engine.trainer import train_one_epoch
@@ -16,7 +17,6 @@ def train_loop(
     criterion,
     device,
     fold_idx=0,
-    pretrained_weights=None,
     use_k_fold=False,
     model_name="SSD_FE",
     run_name="default",
@@ -39,6 +39,21 @@ def train_loop(
 
     # Loss 히스토리 초기화 및 가중치 복원 (있을 경우)
     start_epoch, start_cur_iteration = 1, 0
+
+    # 4. 저장될 / 불러올 가중치 파일 경로 확인
+    suffix = f"fold_{fold_idx}" if use_k_fold else "fixed_split"
+    expected_weights_path = os.path.join(
+        config.WEIGHTS_DIR, f"{model_name}_{run_name}_{suffix}.pth"
+    )
+
+    # 명령어로 별도의 weights가 주어졌다면 그것을 최우선으로, 아니라면 기존에 저장된 동일 이름의 파일 경로를 사용
+    if os.path.exists(expected_weights_path):
+        pretrained_weights = expected_weights_path
+        log.info(
+            f"동일한 이름의 기존 체크포인트를 발견하여 이어서 학습합니다: {pretrained_weights}"
+        )
+    else:
+        pretrained_weights = None
 
     if pretrained_weights:
         start_epoch, start_cur_iteration, history = load_checkpoint(

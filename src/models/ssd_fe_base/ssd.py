@@ -96,14 +96,14 @@ class SSD_FE(nn.Module):
         nn.init.xavier_uniform_(self.conv10_2.weight)
         nn.init.constant_(self.conv10_2.bias, 0)
 
-    def forward(self, x, gt_image=None, gt_mask=None):
+    def forward(self, x, gt_image=None, gt_bboxes=None):
         anchor_features = []
 
         x = self.vgg16[:23](x)
 
         # Feature Enhancement 적용
-        if gt_mask is not None and gt_image is not None:
-            x = self.fe(x, gt_image, gt_mask)
+        if gt_bboxes is not None and gt_image is not None:
+            x = self.fe(x, gt_image, gt_bboxes)
         anchor_features.append(x)
 
         x = self.vgg16[23:](x)
