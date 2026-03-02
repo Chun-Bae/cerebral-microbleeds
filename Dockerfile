@@ -1,12 +1,9 @@
-FROM ubuntu:24.04
+FROM python:3.10-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
     git \
     libgl1-mesa-glx \
     libglib2.0-0 \
