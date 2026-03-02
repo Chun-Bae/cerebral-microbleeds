@@ -107,7 +107,7 @@ def main():
         fold_result_dir = os.path.join(result_dir, suffix)
         os.makedirs(fold_result_dir, exist_ok=True)
 
-        log.info(f"\n========== EVALUATION START ({suffix}) ==========")
+        log.info(f"========== EVALUATION START ({suffix}) ==========")
         log.info(f"Model: {args.model}")
         log.info(f"Weights: {weights_path}")
         log.info(f"Target LMDB: {lmdb_path}")
@@ -131,7 +131,7 @@ def main():
 
     # K-Fold 결과 평균 요약 출력
     if not use_fixed_split and len(all_metrics) > 1:
-        log.info("\n" + "=" * 50)
+        log.info("=" * 50)
         log.info(f"🌈 K-Fold (총 {len(all_metrics)} Fold) 평균 평가 결과 요약")
         log.info("=" * 50)
 
