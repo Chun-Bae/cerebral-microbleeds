@@ -27,16 +27,15 @@ def _forward_backward_step(
     optimizer,
     scaler,
     batch_img,
-    batch_lesion_mask,
-    batch_roi_mask,
     batch_bboxes,
+    batch_roi_mask,
     device,
 ):
     """단일 미니배치에 대한 Forward & Backward 핵심 연산 수행"""
     # 3. forward (AMP autocast)
     device_str = device.type if hasattr(device, "type") else "cuda"
     with torch.amp.autocast(device_type=device_str):
-        pred_locs, pred_scores, anchors = model(batch_img, batch_img, batch_lesion_mask)
+        pred_locs, pred_scores, anchors = model(batch_img, batch_img, batch_bboxes)
 
     # Convert to strictly float32 and ensure no existing NaN/Inf poisons the loss
     pred_locs = torch.nan_to_num(
@@ -124,9 +123,8 @@ def train_one_epoch(
                 optimizer=optimizer,
                 scaler=scaler,
                 batch_img=batch_img,
-                batch_lesion_mask=batch_lesion_mask,
-                batch_roi_mask=batch_roi_mask,
                 batch_bboxes=batch_bboxes,
+                batch_roi_mask=batch_roi_mask,
                 device=device,
             )
 

@@ -35,8 +35,6 @@ class EvaluatePipeline:
         self.weights_path = weights_path
         self.lmdb_path = lmdb_path
         self.patient_id = patient_id
-
-        # TODO: 평가 파이프라인 진입 전에 평가 결과를 저장할 디렉토리(result_dir)가 미리 세팅(선언 및 생성)되어 전달되어야 합니다.
         self.result_dir = result_dir
 
     def run(self):
