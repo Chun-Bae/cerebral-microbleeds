@@ -23,7 +23,7 @@ def _load_patient_ids(txt_path):
 def _create_lmdb(patient_ids, lmdb_path):
     """
     주어진 환자 ID 리스트에 해당하는 PNG 슬라이스들을 모아 통째로 LMDB로 묶습니다.
-    (Train 파이프라인에서 파일 IO 오버헤드를 줄이기 위한 최적화)
+    (양성/음성 필터링은 dataset.py에서 split_type에 따라 처리됩니다.)
     """
     if os.path.exists(lmdb_path):
         log.info(f"이미 LMDB가 존재합니다. 생략: {lmdb_path}")

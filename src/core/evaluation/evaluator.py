@@ -28,6 +28,8 @@ def evaluate(model, testloader, dataset, device, save_dir):
     all_preds, all_gts = [], {}
     model.eval()
     img_id, vis_count = 0, 0
+    total_gt_lesions = 0
+    patient_ids = set()
 
     with torch.no_grad():
         pbar = tqdm(testloader, desc="평가+시각화")
@@ -49,6 +51,16 @@ def evaluate(model, testloader, dataset, device, save_dir):
                 total_tp += tp
                 total_fp += fp
                 total_fn += fn
+                total_gt_lesions += len(gt_boxes)
+
+                # 환자 ID 추적 (dataset에 idx_to_name이 있으면 환자 로 파싱)
+                if hasattr(dataset, "idx_to_name"):
+                    img_name = dataset.idx_to_name.get(img_id, "")
+                    # 예시 파일명: VK049_swi_slice_012.png → VK049
+                    patient_id = (
+                        img_name.split("_")[0] if img_name else f"unknown_{img_id}"
+                    )
+                    patient_ids.add(patient_id)
 
                 all_preds.append((pred_boxes.cpu(), pred_score.cpu(), img_id))
                 all_gts[img_id] = gt_boxes.cpu()
@@ -126,6 +138,9 @@ def evaluate(model, testloader, dataset, device, save_dir):
     fp_per_cbm = total_fp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
 
     results = {
+        "환자 수": len(patient_ids),
+        "평가 슬라이스 수 (PNG)": img_id,
+        "총 GT 병변 수": total_gt_lesions,
         "TP": total_tp,
         "FP": total_fp,
         "FN": total_fn,
@@ -136,7 +151,7 @@ def evaluate(model, testloader, dataset, device, save_dir):
         f"AP@{config.TEST_IOU_THRESH} (Target)": ap,
     }
 
-    log.info("\n" + "=" * 50)
+    log.info("=" * 50)
     log.info("📊 평가 결과")
     log.info("=" * 50)
     for k, v in results.items():

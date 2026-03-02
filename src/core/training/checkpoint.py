@@ -15,6 +15,9 @@ def save_checkpoint(
     fold_idx,
     max_iterations,
     save_dir="weights",
+    model_name="SSD_FE",
+    run_name="default",
+    use_k_fold=False,
 ):
     """
     학습 중 모델과 옵티마이저 등 현재 상태를 저장하는 체크포인트 함수
@@ -40,7 +43,8 @@ def save_checkpoint(
     }
 
     # 최신 덮어쓰기 저장
-    save_path = os.path.join(save_dir, f"latest_ssd_fold_{fold_idx}.pth")
+    suffix = f"fold_{fold_idx}" if use_k_fold else "fixed_split"
+    save_path = os.path.join(save_dir, f"{model_name}_{run_name}_{suffix}.pth")
     torch.save(checkpoint, save_path)
 
 

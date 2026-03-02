@@ -56,7 +56,7 @@ class EvaluatePipeline:
 
     def load_data(self):
         """2단계: DataLoader 구성"""
-        self.dataset = CMBsDataset(self.lmdb_path, bbox_json_path)
+        self.dataset = CMBsDataset(self.lmdb_path, bbox_json_path, split_type="test")
 
         if self.patient_id:
             self.dataset = filter_dataset_by_patient(self.dataset, self.patient_id)

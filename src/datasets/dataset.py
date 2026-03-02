@@ -78,6 +78,22 @@ class CMBsDataset(Dataset):
         # 파일명 → 인덱스 매핑 (2.5D)
         self.name_to_idx = {v: k for k, v in self.idx_to_name.items()}
 
+    def get_stats(self):
+        """Dataset 통계 반환: 환자 수, 슬라이스 수, GT 병변 수"""
+        patient_ids = set()
+        total_lesions = 0
+        for name in self.idx_to_name.values():
+            patient_id = (
+                name.split("_slice_")[0] if "_slice_" in name else name.split("_")[0]
+            )
+            patient_ids.add(patient_id)
+            total_lesions += len(self.bboxes_dict.get(name, []))
+        return {
+            "환자 수": len(patient_ids),
+            "슬라이스 수 (PNG)": len(self.valid_indices),
+            "GT 병변 수": total_lesions,
+        }
+
     def _init_db(self):
         """
         lmdb 연결 초기화

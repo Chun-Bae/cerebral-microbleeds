@@ -1,5 +1,5 @@
 import torch
-from src.box_ops import BBox
+from src.utils.bbox import BBox
 import config
 from tqdm import tqdm
 

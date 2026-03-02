@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.box_ops import BBox
+from src.utils.bbox import BBox
 
 
 class MultiBoxLoss(nn.Module):
@@ -92,7 +92,6 @@ class MultiBoxLoss(nn.Module):
         pos_mask,
         batch_size,
         num_anchors,
-        device,
     ):
         conf_p = pred_score.view(-1, self.num_classes).float()
         conf_t_flat = conf_t.view(-1)
@@ -165,7 +164,6 @@ class MultiBoxLoss(nn.Module):
             pos_mask,
             batch_size,
             num_anchors,
-            device,
         )
 
         num_pos_sum = pos_mask.sum().float()

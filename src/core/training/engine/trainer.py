@@ -34,7 +34,8 @@ def _forward_backward_step(
 ):
     """단일 미니배치에 대한 Forward & Backward 핵심 연산 수행"""
     # 3. forward (AMP autocast)
-    with torch.amp.autocast(device_type=device):
+    device_str = device.type if hasattr(device, "type") else "cuda"
+    with torch.amp.autocast(device_type=device_str):
         pred_locs, pred_scores, anchors = model(batch_img, batch_img, batch_lesion_mask)
 
     # Convert to strictly float32 and ensure no existing NaN/Inf poisons the loss

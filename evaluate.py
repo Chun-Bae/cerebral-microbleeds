@@ -1,7 +1,6 @@
 import argparse
 import os
 import datetime
-import sys
 
 import config
 from src.pipelines.evaluate_pipeline import EvaluatePipeline
@@ -31,14 +30,16 @@ def main():
 
     # 1. 평가 결과를 저장할 디렉토리 생성
     run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d(%Hh-%Mm-%Ss)")
+    weights_stem = os.path.splitext(os.path.basename(args.weights))[0]
     if args.patient:
         result_dir = os.path.join(
             getattr(config, "RESULTS_DIR", "results"),
-            f"eval_{args.patient}_{run_timestamp}",
+            f"eval_{weights_stem}_{args.patient}_{run_timestamp}",
         )
     else:
         result_dir = os.path.join(
-            getattr(config, "RESULTS_DIR", "results"), f"eval_{run_timestamp}"
+            getattr(config, "RESULTS_DIR", "results"),
+            f"eval_{weights_stem}_{run_timestamp}",
         )
 
     os.makedirs(result_dir, exist_ok=True)

@@ -3,8 +3,8 @@ import torch
 import config
 from src.datasets import get_transforms
 from src.utils.logger import log
-from src.core.training.trainer import train_one_epoch
-from src.core.training.validator import validate
+from src.core.training.engine.trainer import train_one_epoch
+from src.core.training.engine.validator import validate
 from src.core.training.checkpoint import save_checkpoint, load_checkpoint
 
 
@@ -17,6 +17,9 @@ def train_loop(
     device,
     fold_idx=0,
     pretrained_weights=None,
+    use_k_fold=False,
+    model_name="SSD_FE",
+    run_name="default",
 ):
     """
     학습 메인 루프
@@ -25,14 +28,14 @@ def train_loop(
 
     # 시작 로그 출력
     log.info(
-        f"\n🚀 시작: FOLD {fold_idx + 1 if config.USE_K_FOLD else '(Fixed Split)'}"
+        f"\n🚀 시작: {'FOLD ' + str(fold_idx + 1) if use_k_fold else '(Fixed Split)'}"
     )
 
     # 1. Transform 생성
     train_transform, _ = get_transforms(device)
 
     # AMP GradScaler 생성
-    scaler = torch.amp.GradScaler(device_type=device)
+    scaler = torch.amp.GradScaler("cuda")
 
     # Loss 히스토리 초기화 및 가중치 복원 (있을 경우)
     start_epoch, start_cur_iteration = 1, 0
@@ -91,18 +94,18 @@ def train_loop(
             train_start_step,
         )
 
+        log.info(
+            f"Epoch {epoch} | Iter {cur_iteration}/{max_iterations} - "
+            f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
+            f"LR: {optimizer.param_groups[0]['lr']:.2e}"
+        )
+
         # 3. 검증
         validation_interval = config.VALIDATION_INTERVAL
         if epoch % validation_interval == 0 or cur_iteration >= max_iterations:
             val_loss, val_cls, val_loc = validate(model, val_loader, criterion, device)
 
-            # 4. 로그 출력
-            log.info(
-                f"Epoch {epoch} | Iter {cur_iteration}/{max_iterations} - "
-                f"Train: {train_loss:.4f} (cls:{train_cls:.4f}, loc:{train_loc:.4f}) | "
-                f"Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f}) | "
-                f"LR: {optimizer.param_groups[0]['lr']:.2e}"
-            )
+            log.info(f"  └─ Val: {val_loss:.4f} (cls:{val_cls:.4f}, loc:{val_loc:.4f})")
         else:
             val_loss, val_cls, val_loc = 0.0, 0.0, 0.0
 
@@ -127,6 +130,9 @@ def train_loop(
             fold_idx=fold_idx,
             max_iterations=max_iterations,
             save_dir=config.WEIGHTS_DIR,
+            model_name=model_name,
+            run_name=run_name,
+            use_k_fold=use_k_fold,
         )
 
         epoch += 1

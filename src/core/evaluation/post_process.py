@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torchvision.ops import nms
-from src.box_ops import BBox
+from src.utils.bbox import BBox
 import numpy as np
 import config
 
