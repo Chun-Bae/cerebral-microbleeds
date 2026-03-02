@@ -25,12 +25,19 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY HD-BET /workspace/HD-BET
 RUN pip install -e /workspace/HD-BET
 
+RUN mkdir -p /workspace/data
+RUN mkdir -p /workspace/results
+RUN mkdir -p /workspace/weights
+
+# COPY data/samsung_data /workspace/data/
+# data/samsung_data는 직접 copy
 COPY src /workspace/src
+COPY tools /workspace/tools
+COPY third_party /workspace/third_party
 COPY scripts /workspace/scripts
+RUN chmod -R +x /workspace/scripts
 COPY notebooks /workspace/notebooks
 COPY config.py train.py evaluate.py /workspace/
+COPY .gitignore .README.md /workspace/
 
 CMD ["/bin/bash"]
-
-
-# data/samsung_data는 직접 copy
