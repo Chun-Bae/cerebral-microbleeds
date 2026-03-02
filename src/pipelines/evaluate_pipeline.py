@@ -1,7 +1,7 @@
 import os
 import torch
 from torch.utils.data import DataLoader
-from src.models import SSD_FE
+import src.models as models_module
 from src.core.evaluation import evaluate
 from src.datasets import (
     CMBsDataset,
@@ -24,8 +24,14 @@ class EvaluatePipeline:
     """
 
     def __init__(
-        self, weights_path=None, lmdb_path=None, patient_id=None, result_dir=None
+        self,
+        model_name=None,
+        weights_path=None,
+        lmdb_path=None,
+        patient_id=None,
+        result_dir=None,
     ):
+        self.model_name = model_name
         self.weights_path = weights_path
         self.lmdb_path = lmdb_path
         self.patient_id = patient_id
@@ -38,7 +44,7 @@ class EvaluatePipeline:
         self.setup_model()
         self.load_data()
 
-        evaluate(
+        return evaluate(
             model=self.model,
             testloader=self.test_loader,
             dataset=self.dataset,
@@ -48,7 +54,8 @@ class EvaluatePipeline:
 
     def setup_model(self):
         """1단계: 모델 생성 및 가중치 로드"""
-        self.model = SSD_FE(num_classes=2).to(device)
+        model_class = getattr(models_module, self.model_name)
+        self.model = model_class(num_classes=2).to(device)
         checkpoint = torch.load(
             self.weights_path, map_location=device, weights_only=False
         )
