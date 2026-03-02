@@ -1,61 +1,59 @@
-## 현재까지 바뀐 목록
+# Cerebral Microbleeds (CMB) Detection
 
-1. 256 → 512 이미지 입력
+이 프로젝트는 뇌 MRI 이미지에서 미세출혈(Cerebral Microbleeds, CMB)을 탐지하는 딥러닝 모델 모듈입니다. 데이터 전처리, 모델 훈련(K-Fold 및 Fixed Split 지원), 추론 및 평가 파이프라인으로 구성되어 있습니다.
 
-2. 데이터 증강 paper 그대로 구현
+## 🚀 파이프라인 실행 가이드
 
-3. 영상을 8-bit → 16-bit로 변환
+모든 실행 스크립트는 프로젝트 루트 디렉토리에서 실행합니다. 핵심 실행 파일은 `train.py`와 `evaluate.py` 두 가지로 분리되어 있습니다.
 
-4. stratify 시 환자 분포를 살핀뒤 병변 개수에 따라 라벨을 부여하고 계층화
-    - 단, VK049환자의 병변 개수는 약 300개 정도로 16개 이하인 다른 환자에 비해 많은 편
-    - 그래서 VK049 환자는 우선적으로 train에만 사용
-    - count == 0 → "none"
-    - count <= 2 → "ver low"
-    - count <= 5 → "low"
-    - count <= 10 → "medium"
-    - count <= 20 → "high"
-    - count >  20 → "extreme"
+### 1. 모델 훈련 (`train.py`)
+모델 학습과 관련된 모든 과정을 제어합니다. 인자(옵션)를 통해서 전처리부터 세밀한 Fold 훈련까지 조정할 수 있습니다.
 
-5. 이상치의 존재로 K=5 fold로 나누어 학습
-    - hold-out 20% 분리 후 8:2 = train:val 비율 구성
+```bash
+python train.py [options]
+```
 
-6. 매 학습 마다 bbox를 구하는 형식 → bbox json를 따로 구해놓고 평가
-    - cv2는 cpu 자원을 사용하기에, 매 번 사용하면 학습 과정에서 gpu와의 병목이 심해짐
+#### 📌 주요 인자 (Arguments)
+| 인자 (Args) | 타입 | 설명 |
+|---|---|---|
+| `--prepare_data` | Flag | 학습 시작 전, NIfTI 이미지 전처리(Skull Stripping, N4 bias correction, PNG 변환) 및 LMDB 데이터베이스를 새로 구성할 때 사용합니다. (최초 1회 필수 권장) |
+| `--weights` | String | (선택적) 이어서 학습하거나 파인튜닝할 가중치(`.pth`) 파일 경로를 입력합니다. 미입력 시 처음부터 학습을 시작합니다. |
+| `--fixed_split` | Flag | (선택적) 모델을 훈련할 때 설정(config)의 K-Fold 옵션을 덮어쓰고, 강제로 고정된 분할(Fixed Split) 데이터셋으로만 학습을 수행합니다. |
+| `--folds` | Integers | (선택적) 특정 Fold 번호만 콕 집어서 학습할 때 사용합니다. (예: `--folds 0 1 2`). 지정하지 않으면 `config.py`에 정의된 개수만큼 전체 K-Fold를 순차적으로 돌립니다. |
 
-7. model
-    - 단순 feature map to location 방식 → anchor to location model로 변경
-    - SSD-512 모델로 작은 병변을 찾는데에는 한계 존재
-    - 따라서 conv4_3 까지 가져오는 방식 대신,
-    - conv3_3, conv4_3, conv5_3에서 각 계층별 적절한 scale, ratio 사용
-    - scale은 bboxes들의 분포를 구하고 확인한 뒤, 논문에 나온 적정 공식을 사용하여 부여
-    - FE 논문 수식은 아직 적용 x (제대로 된 성능 확인 후 비교 예정)
+#### 💡 사용 예시
+```bash
+# 1. 처음 데이터를 전처리하고 기본 학습 시작하기
+python train.py --prepare_data
 
-8. 손실 함수
-    - anchor 방식으로 변경됨에 따라 각 병변별 anchor에 대응되는 IoU를 구함
-    - 병변이 작아, IoU=0.35이면 pos로 하고 손실 합산
-    - 배경이 절대 적으로 많기 때문에 Hard Negative Mining를 적용하여 손실이 큰 배경만 계산
+# 2. 전처리 없이 0번, 2번 Fold만 특정 가중치를 베이스로 학습하기 
+python train.py --folds 0 2 --weights results/latest.pth
 
-9. 그 외 자잘한 최적화
-    - png를 그대로 불러오는 것은 I/O 병목이 있을 수 있어, lmdb로 바이너리화 시킨 후, db로 통신 (에폭별 약 12분 → 10분으로 단축)
-    - Window 환경은 오버헤드가 크기 때문에 Linux 환경에서 학습
-    - CuDNN 적용 (VRAM 절약 및 연산 속도 증가)
-    - AMP 적용 (VRAM 절약 및 연산 속도 증가)
+# 3. K-Fold 대신 고정 분할 모드로만 훈련하기
+python train.py --fixed_split
+```
 
-10. 성능에 영향은 없지만 편리한 것
-    - logger를 통해 매 로그마다 타임스탬프를 찍기
-    - weight 저장
-    - 3D 병변 시각화 스크립트
-    - 3D 병변 개수 세기
-    - 환자별 3D → 2D로 했을 때 2D 병변 세기
-    - 병변을 윤곽선만, bbox만, 둘다 표시를 각 swi, roi별 시각화하는 이미지 제작
-    - 이 때 생성된 bbox의 정보가 json에 저장
-    - 추론 시 평가된 데이터도 시각화 하는 작업 추가
-    - 모듈화된 메소드는 __name__ = "__main__"를 적용하여 개별 테스트 가능
+---
 
-11. hd-bet로 뇌 영역 마스크 처리
+### 2. 모델 평가 (`evaluate.py`)
+학습이 끝난 가중치를 불러와서 Test 셋을 대상으로 mAP, FROC, 오차 행렬(Confusion Matrix) 계산 및 결과 시각화를수행합니다.
 
-12. bbox 증강 처리 (좌표 변환은 정확하지 않을 수 있어, 변환된 roi로 bbox 추출)
+```bash
+python evaluate.py --weights [가중치 경로] [options]
+```
 
-13. Focal loss: 배경을 오탐할 때 손실을 극대화 하여 오탐 능력 완화
+#### 📌 주요 인자 (Arguments)
+| 인자 (Args) | 타입 | 설명 |
+|---|---|---|
+| `--weights` | String | **(필수)** 평가할 타겟 모델의 가중치(`.pth`) 파일 경로입니다. |
+| `--lmdb` | String | (선택적) 평가에 사용할 Test LMDB 경로입니다. (기본값: `data/lmdb/fixed_split/test.lmdb`) |
+| `--patient` | String | (선택적) 전체 Test 셋을 보지 않고, 특정 환자(예: `VK049`) 데이터만 필터링하여 단독으로 평가 결과를 뽑아볼 때 사용합니다. |
 
-14. CIoU를 통해 병변을 단순 IoU 일치 없이도 정답 loc를 찾아가도록 유도
+#### 💡 사용 예시
+```bash
+# 1. 지정된 가중치로 Test 셋 전체에 대한 정밀 평가 수행
+python evaluate.py --weights results/train_xxx/latest_ssd.pth
+
+# 2. 특정 환자('VK049')의 슬라이스들에 대해서만 탐지력 집중 평가
+python evaluate.py --weights results/train_xxx/latest_ssd.pth --patient VK049
+```
