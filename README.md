@@ -49,7 +49,7 @@ python train.py --model SSD_FE --run_name run_fixed --fixed_split
 ---
 
 ### 2. 모델 평가 (`evaluate.py`)
-학습이 끝난 후 모델 아키텍처와 학습 이름(런 네임)을 지정해주면, `evaluate.py`가 설정된 분할 설정(K-Fold 혹은 Fixed)에 따라 자동으로 가중치와 대상 LMDB를 매핑하여 mAP, FROC, 오차 행렬(Confusion Matrix) 계산 및 결과 시각화를수행합니다.
+학습이 끝난 후 모델 아키텍처와 학습 이름(런 네임)을 지정해주면, `evaluate.py`가 설정된 분할 설정(K-Fold 혹은 Fixed)에 따라 자동으로 가중치와 대상 LMDB를 매핑하여 mAP, FROC, 오차 행렬(Confusion Matrix) 계산 및 결과 시각화를 수행합니다.
 
 ```bash
 python evaluate.py --model SSD_FE --run_name default [options]

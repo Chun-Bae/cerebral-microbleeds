@@ -8,11 +8,15 @@
 # -v : 마운트, 도커에 복제할 필요 없이 호스트(Windows/WSL) 경로에 파일을 직접 연결해 쓸 수 있음.
 #
 # (Windows PowerShell / CMD 환경용 절대 경로 마운트 예시)
-# docker run --gpus all -it --shm-size=8g \
-#     -v C:\Users\Bisnel\Desktop\samsung\samsung data\samsung_data:/workspace/data/samsung_data \
-#     -p 7681:7681 -p 2222:22 \
+# 경로 중간에 띄어쓰기('samsung data')가 있으므로 반드시 따옴표("")로 감싸야 합니다!
+# docker run --gpus all -it --shm-size=8g `
+#     -v "C:\Users\Bisnel\.ssh\bisnel.pub:/root/.ssh/authorized_keys" `
+#     -v "D:\samsung_project\mnt\data:/workspace/data" `
+#     -v "D:\samsung_project\mnt\results:/workspace/results" `
+#     -v "D:\samsung_project\mnt\weights:/workspace/weights" `
+#     -p 7681:7681 -p 2222:22 `
 #     --name samsung_cmbs_container samsung_cmbs
-#
+
 # 참고: 컨테이너 실행 시 SSH 서버가 자동으로 켜지도록 설정되어 있습니다.
 #       외부(Windows 등) 터미널 또는 VSCode에서 `ssh root@100.114.178.85 -p 2222` 커맨드로 바로 접속할 수 있습니다. (비밀번호: 0000)
 #
@@ -20,29 +24,29 @@
 #       컨테이너 내부에서 [ ttyd -p 7681 tmux ] 등을 실행하고,
 #       Windows(호스트)의 웹 브라우저에서 http://localhost:7681 로 접속하면 됩니다.
 # ==============================================================================
-
-FROM ubuntu:24.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && apt-get install -y \
-    python3.10 \
-    python3.10-venv \
-    git \
-    libgl1-mesa-glx \
-    tmux \
-    ttyd \
-    openssh-server \
-    && rm -rf /var/lib/apt/lists/*
+# apt-get 개별 실행 및 Ubuntu 22.04 기본 python3(3.10) 설치
+RUN apt-get update
+RUN apt-get install -y python3
+RUN apt-get install -y python3-venv
+RUN apt-get install -y python3-dev
+RUN apt-get install -y git
+RUN apt-get install -y libgl1
+RUN apt-get install -y libglib2.0-0
+RUN apt-get install -y tmux
+RUN apt-get install -y ttyd
+RUN apt-get install -y openssh-server
+RUN rm -rf /var/lib/apt/lists/*
 
 # SSH 설정 (비밀번호: 0000)
-RUN mkdir /var/run/sshd && \
-    echo 'root:0000' | chpasswd && \
-    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config
+RUN mkdir -p /var/run/sshd
+RUN echo 'root:0000' | chpasswd
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config
 
 WORKDIR /workspace
 
@@ -50,15 +54,21 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt /workspace/
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch==2.7.1+cu118 torchvision==0.22.1+cu118 torchaudio==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118 && \
-    pip install --no-cache-dir -r requirements.txt
 
+# pip 및 패키지 설치
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir torch==2.7.1+cu118 torchvision==0.22.1+cu118 torchaudio==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118
+RUN pip install --no-cache-dir -r requirements.txt
+
+# HD-BET 라이브러리 설치 과정 분리
 RUN mkdir -p /workspace/third_party
-RUN git clone https://github.com/MIC-DKFZ/HD-BET.git /workspace/third_party/HD-BET && \
-    cd /workspace/third_party/HD-BET && \
-    pip install -e .
+RUN git clone https://github.com/MIC-DKFZ/HD-BET.git /workspace/third_party/HD-BET
 
+WORKDIR /workspace/third_party/HD-BET
+RUN pip install -e .
+WORKDIR /workspace
+
+# 디렉토리 생성 개별 실행
 RUN mkdir -p /workspace/data
 RUN mkdir -p /workspace/results
 RUN mkdir -p /workspace/src
@@ -74,9 +84,11 @@ COPY records /workspace/records
 COPY notebooks /workspace/notebooks
 COPY scripts /workspace/scripts
 COPY config.py train.py evaluate.py /workspace/
-COPY .gitignore .README.md /workspace/
+COPY .gitignore README.md /workspace/
 
 RUN chmod -R +x /workspace/tools
 RUN chmod -R +x /workspace/scripts
+
+RUN echo "source /opt/venv/bin/activate" >> ~/.bashrc
 
 CMD ["/bin/sh", "-c", "service ssh start && exec /bin/bash"]
