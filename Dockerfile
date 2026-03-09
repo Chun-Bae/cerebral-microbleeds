@@ -84,7 +84,7 @@ COPY records /workspace/records
 COPY notebooks /workspace/notebooks
 COPY scripts /workspace/scripts
 COPY config.py train.py evaluate.py /workspace/
-COPY .gitignore README.md /workspace/
+COPY .gitignore README.md Dockerfile /workspace/
 
 RUN chmod -R +x /workspace/tools
 RUN chmod -R +x /workspace/scripts
