@@ -99,14 +99,15 @@ def calculate_ap(detection_list, all_gts, iou_threshold=0.3):
         if len(total_pred) > 0 and total_pred[-1] > 0
         else torch.zeros_like(tp_cumsum)
     )
-    recalls = tp_cumsum / total_gt if total_gt > 0 else torch.zeros_like(tp_cumsum)
+    recalls = tp_cumsum / \
+        total_gt if total_gt > 0 else torch.zeros_like(tp_cumsum)
 
     precisions = torch.cat([torch.tensor([1.0]), precisions])
     recalls = torch.cat([torch.tensor([0.0]), recalls])
     for i in range(len(precisions) - 2, -1, -1):
         precisions[i] = max(precisions[i], precisions[i + 1])
 
-    ap = 0.0
+    ap = torch.tensor(0.0)
     for i in range(1, len(recalls)):
         ap += (recalls[i] - recalls[i - 1]) * precisions[i]
     return ap.item()
