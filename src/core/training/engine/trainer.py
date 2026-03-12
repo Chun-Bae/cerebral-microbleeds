@@ -35,7 +35,8 @@ def _forward_backward_step(
     # 3. forward (AMP autocast)
     device_str = device.type if hasattr(device, "type") else "cuda"
     with torch.amp.autocast(device_type=device_str):
-        pred_locs, pred_scores, anchors = model(batch_img, batch_img, batch_bboxes)
+        pred_locs, pred_scores, anchors = model(
+            batch_img, batch_img, batch_bboxes)
 
     # Convert to strictly float32 and ensure no existing NaN/Inf poisons the loss
     pred_locs = torch.nan_to_num(
@@ -46,7 +47,8 @@ def _forward_backward_step(
     )
 
     # 4. GT 준비 (bboxes and label)
-    gt_labels = [torch.ones(len(bboxes)).long().to(device) for bboxes in batch_bboxes]
+    gt_labels = [torch.ones(len(bboxes)).long().to(device)
+                 for bboxes in batch_bboxes]
 
     # 5. MultiBox Loss 계산
     loss, cls_loss, loc_loss = criterion(
@@ -64,7 +66,7 @@ def _forward_backward_step(
 
     # Gradient Clipping
     scaler.unscale_(optimizer)
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
     scaler.step(optimizer)
     scaler.update()
@@ -154,7 +156,8 @@ def train_one_epoch(
             eta_seconds = avg_time_per_step * steps_left
             import datetime
 
-            eta_time = datetime.datetime.fromtimestamp(time.time() + eta_seconds)
+            eta_time = datetime.datetime.fromtimestamp(
+                time.time() + eta_seconds)
             eta_str = eta_time.strftime("%m/%d %H:%M")
         else:
             eta_str = "N/A"
