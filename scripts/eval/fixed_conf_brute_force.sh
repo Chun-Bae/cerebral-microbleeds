@@ -8,6 +8,6 @@ RUN_NAME=${2:-"default"}
 for CONF in 0.05 0.10 0.15 0.20 0.25 0.30 0.35 0.40 0.45 0.50 0.55 0.60 0.65 0.70 0.75 0.80 0.85 0.90 0.95
 do
     echo "🎯 >>> [평가] Fixed Split 진행 (Confidence: $CONF)..."
-    python evaluate.py --model "$MODEL" --run_name "$RUN_NAME" --fixed_split --conf "$CONF"
+    python evaluate.py --model "$MODEL" --run_name "$RUN_NAME" --fixed_split --conf "$CONF" --no_vis
 done
 

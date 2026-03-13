@@ -30,12 +30,14 @@ class EvaluatePipeline:
         lmdb_path=None,
         patient_id=None,
         result_dir=None,
+        visualize=True,
     ):
         self.model_name = model_name
         self.weights_path = weights_path
         self.lmdb_path = lmdb_path
         self.patient_id = patient_id
         self.result_dir = result_dir
+        self.visualize = visualize
 
     def run(self):
         """평가 파이프라인 실행"""
@@ -48,6 +50,7 @@ class EvaluatePipeline:
             dataset=self.dataset,
             device=device,
             save_dir=self.result_dir,
+            visualize=self.visualize,
         )
 
     def setup_model(self):

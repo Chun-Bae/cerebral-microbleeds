@@ -58,6 +58,11 @@ def main():
         default=getattr(config, "CONF_THRESH"),
         help="Confidence threshold for filtering detections (default: 0.001)",
     )
+    parser.add_argument(
+        "--no_vis",
+        action="store_true",
+        help="Disable visualization to speed up evaluation",
+    )
     args = parser.parse_args()
     config.CONF_THRESH = args.conf
 
@@ -130,6 +135,7 @@ def main():
             lmdb_path=lmdb_path,
             patient_id=args.patient,
             result_dir=fold_result_dir,
+            visualize=not args.no_vis,
         )
 
         metrics_dict = pipeline.run()

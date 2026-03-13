@@ -18,11 +18,12 @@ from src.utils.plots import (
 )
 
 
-def evaluate(model, testloader, dataset, device, save_dir):
+def evaluate(model, testloader, dataset, device, save_dir, visualize=True):
     """전체 평가: TP/FP/FN, mAP, FROC, Confusion Matrix, 시각화"""
     os.makedirs(save_dir, exist_ok=True)
-    vis_dir = os.path.join(save_dir, "visualizations")
-    os.makedirs(vis_dir, exist_ok=True)
+    if visualize:
+        vis_dir = os.path.join(save_dir, "visualizations")
+        os.makedirs(vis_dir, exist_ok=True)
 
     total_tp, total_fp, total_fn = 0, 0, 0
     all_preds, all_gts = [], {}
@@ -32,7 +33,7 @@ def evaluate(model, testloader, dataset, device, save_dir):
     patient_ids = set()
 
     with torch.no_grad():
-        pbar = tqdm(testloader, desc="평가+시각화")
+        pbar = tqdm(testloader, desc="평가 진행 중")
         for batch_img, _, batch_roi_mask, batch_bboxes in pbar:
             batch_img = batch_img.to(device)
             batch_img = normalize_16bit(batch_img)
@@ -65,42 +66,43 @@ def evaluate(model, testloader, dataset, device, save_dir):
                 all_preds.append((pred_boxes.cpu(), pred_score.cpu(), img_id))
                 all_gts[img_id] = gt_boxes.cpu()
 
-                img_np = batch_img[b].detach().cpu().numpy()
-                if len(img_np.shape) == 3:
-                    img_np = img_np.transpose(1, 2, 0)
-                    img_np = (
-                        img_np[:, :, 1] if img_np.shape[2] == 3 else img_np[:, :, 0]
-                    )
-                    img_np = ((img_np + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
+                if visualize:
+                    img_np = batch_img[b].detach().cpu().numpy()
+                    if len(img_np.shape) == 3:
+                        img_np = img_np.transpose(1, 2, 0)
+                        img_np = (
+                            img_np[:, :, 1] if img_np.shape[2] == 3 else img_np[:, :, 0]
+                        )
+                        img_np = ((img_np + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
 
-                gt_np = gt_boxes.cpu().numpy()
-                pred_np = (
-                    pred_boxes.cpu().numpy() if len(pred_boxes) > 0 else np.array([])
-                )
-                pred_s_np = (
-                    pred_score.cpu().numpy() if len(pred_score) > 0 else np.array([])
-                )
-
-                ign_boxes_np, ign_scores_np = get_ignored_fn(
-                    pred_locs[b], pred_scores[b], anchors, gt_boxes
-                )
-
-                if len(gt_boxes) > 0 or len(pred_boxes) > 0:
-                    filename = (
-                        dataset.idx_to_name[img_id]
-                        if hasattr(dataset, "idx_to_name")
-                        else f"img_{img_id:05d}.png"
+                    gt_np = gt_boxes.cpu().numpy()
+                    pred_np = (
+                        pred_boxes.cpu().numpy() if len(pred_boxes) > 0 else np.array([])
                     )
-                    visualize_predictions(
-                        img_np,
-                        gt_np,
-                        pred_np,
-                        pred_s_np,
-                        os.path.join(vis_dir, filename),
-                        ignored_boxes=ign_boxes_np,
-                        ignored_scores=ign_scores_np,
+                    pred_s_np = (
+                        pred_score.cpu().numpy() if len(pred_score) > 0 else np.array([])
                     )
-                    vis_count += 1
+
+                    ign_boxes_np, ign_scores_np = get_ignored_fn(
+                        pred_locs[b], pred_scores[b], anchors, gt_boxes
+                    )
+
+                    if len(gt_boxes) > 0 or len(pred_boxes) > 0:
+                        filename = (
+                            dataset.idx_to_name[img_id]
+                            if hasattr(dataset, "idx_to_name")
+                            else f"img_{img_id:05d}.png"
+                        )
+                        visualize_predictions(
+                            img_np,
+                            gt_np,
+                            pred_np,
+                            pred_s_np,
+                            os.path.join(vis_dir, filename),
+                            ignored_boxes=ign_boxes_np,
+                            ignored_scores=ign_scores_np,
+                        )
+                        vis_count += 1
                 img_id += 1
 
             pbar.set_postfix(
