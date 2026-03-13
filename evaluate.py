@@ -52,7 +52,14 @@ def main():
         default=None,
         help="Optional specific patient ID to evaluate (e.g., VK049)",
     )
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=getattr(config, "CONF_THRESH"),
+        help="Confidence threshold for filtering detections (default: 0.001)",
+    )
     args = parser.parse_args()
+    config.CONF_THRESH = args.conf
 
     # 0.5 가중치 파일명 및 Fold 대상 파악
     run_name = args.run_name.replace(" ", "_")
