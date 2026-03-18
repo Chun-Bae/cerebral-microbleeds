@@ -1,6 +1,6 @@
 import torch
 import config
-from src.models import SSD_FE, SSD_FE_V1
+from src.models import SSD_FE, SSD_FE_V1, SSD_FE_V2
 from src.losses import MultiBoxLoss
 
 
@@ -11,6 +11,8 @@ def compile_model(model_name="SSD_FE"):
     # 1. 모델 할당
     if model_name == "SSD_FE_V1":
         model = SSD_FE_V1(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V2":
+        model = SSD_FE_V2(num_classes=2).to(config.DEVICE)
     else:
         model = SSD_FE(num_classes=2).to(config.DEVICE)
 
