@@ -7,6 +7,7 @@ from .ssd_fe_v5 import SSD_FE_V5
 from .ssd_fe_v6 import SSD_FE_V6
 from .ssd_fe_v7 import SSD_FE_V7
 from .ssd_fe_v8 import SSD_FE_V8
+from .ssd_fe_v9 import SSD_FE_V9
 
 __all__ = [
     "SSD_FE",
@@ -18,4 +19,5 @@ __all__ = [
     "SSD_FE_V6",
     "SSD_FE_V7",
     "SSD_FE_V8",
+    "SSD_FE_V9",
 ]
