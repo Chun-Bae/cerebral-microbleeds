@@ -1,6 +1,6 @@
 import torch
 import config
-from src.models import SSD_FE, SSD_FE_V1, SSD_FE_V2
+from src.models import SSD_FE, SSD_FE_V1, SSD_FE_V2, SSD_FE_V3, SSD_FE_V4, SSD_FE_V5, SSD_FE_V6, SSD_FE_V7, SSD_FE_V8, SSD_FE_V9
 from src.losses import MultiBoxLoss
 
 
@@ -13,6 +13,20 @@ def compile_model(model_name="SSD_FE"):
         model = SSD_FE_V1(num_classes=2).to(config.DEVICE)
     elif model_name == "SSD_FE_V2":
         model = SSD_FE_V2(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V3":
+        model = SSD_FE_V3(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V4":
+        model = SSD_FE_V4(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V5":
+        model = SSD_FE_V5(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V6":
+        model = SSD_FE_V6(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V7":
+        model = SSD_FE_V7(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V8":
+        model = SSD_FE_V8(num_classes=2).to(config.DEVICE)
+    elif model_name == "SSD_FE_V9":
+        model = SSD_FE_V9(num_classes=2).to(config.DEVICE)
     else:
         model = SSD_FE(num_classes=2).to(config.DEVICE)
 

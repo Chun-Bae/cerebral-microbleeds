@@ -13,18 +13,18 @@ output_dir = config.SWI_BET_OUTPUT_DIR
 # === HD-BET Path ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
 hd_bet_path = os.path.abspath(
-    os.path.join(current_dir, "../../../../third_party/HD-BET")
+    os.path.join(current_dir, "../../../third_party/HD-BET/HD_BET")
 )
 
 if hd_bet_path not in sys.path:
     sys.path.append(hd_bet_path)
 
 try:
-    from third_party.HD_BET.checkpoint_download import maybe_download_parameters
-    from third_party.HD_BET.hd_bet_prediction import hdbet_predict, apply_bet, get_hdbet_predictor
-    from third_party.HD_BET.paths import folder_with_parameter_files
-except ImportError:
-    pass
+    from checkpoint_download import maybe_download_parameters
+    from hd_bet_prediction import hdbet_predict, apply_bet, get_hdbet_predictor
+    from paths import folder_with_parameter_files
+except ImportError as e:
+    raise ImportError(f"HD-BET import 실패: {e}") from e
 
 
 def run_skull_stripping():
