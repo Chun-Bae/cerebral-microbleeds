@@ -59,12 +59,19 @@ def main():
         help="Confidence threshold for filtering detections (default: 0.001)",
     )
     parser.add_argument(
+        "--nms_thresh",
+        type=float,
+        default=getattr(config, "NMS_THRESH", 0.45),
+        help="NMS IoU threshold for suppressing overlapping detections (default: 0.45)",
+    )
+    parser.add_argument(
         "--no_vis",
         action="store_true",
         help="Disable visualization to speed up evaluation",
     )
     args = parser.parse_args()
     config.CONF_THRESH = args.conf
+    config.NMS_THRESH = args.nms_thresh
 
     # 0.5 가중치 파일명 및 Fold 대상 파악
     run_name = args.run_name.replace(" ", "_")
